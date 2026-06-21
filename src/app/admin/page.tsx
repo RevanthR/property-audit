@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2, Users, ListChecks, ClipboardList, CheckCircle2, Clock, AlertCircle, TrendingUp, ChevronRight, Calendar } from "lucide-react";
+import { Building2, Users, ListChecks, ClipboardList, CheckCircle2, Clock, AlertCircle, TrendingUp, ChevronRight, Calendar, BarChart2 } from "lucide-react";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthGuard } from "@/components/layout/auth-guard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,6 +34,7 @@ const ADMIN_SECTIONS = [
   { href: "/admin/users", icon: Users, title: "Users & Access", description: "Create auditor accounts and manage access.", color: "bg-purple-100 text-purple-600" },
   { href: "/admin/templates", icon: ListChecks, title: "Checklist Templates", description: "Edit checklist items for all audit sections.", color: "bg-green-100 text-green-600" },
   { href: "/admin/audits", icon: ClipboardList, title: "All Audits", description: "View and manage all audits across every property.", color: "bg-orange-100 text-orange-600" },
+  { href: "/admin/metrics", icon: BarChart2, title: "Analytics", description: "Issue hotspots, manpower trends, and decision metrics.", color: "bg-indigo-100 text-indigo-600" },
 ];
 
 export default function AdminPage() {
