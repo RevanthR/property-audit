@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuditStore, type HotelSubAreaDraft, type ChecklistEntry } from "@/lib/store/audit";
 import { ChecklistItemRow } from "./checklist-item-row";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+
+// Module-level cache so kitchen templates are fetched once per session
+const templateCache = new Map<string, { id: string; name: string; items: { id: string; itemLabel: string }[] }[]>();
+
+// Stable empty fallback — a new [] each call causes useSyncExternalStore infinite loop
+const EMPTY_SUBAREAS: HotelSubAreaDraft[] = [];
 
 interface HotelSectionFormProps {
   auditId: string;
@@ -25,58 +31,84 @@ interface HotelSectionFormProps {
 }
 
 export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSectionFormProps) {
-  const { drafts, updateHotelSection } = useAuditStore();
-  const draft = drafts[auditId];
-  const subAreas: HotelSubAreaDraft[] = (draft?.[sectionKey] as HotelSubAreaDraft[]) || [];
+  const subAreas = useAuditStore(
+    useCallback((s) => (s.drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS, [auditId, sectionKey])
+  );
+  const updateHotelSection = useAuditStore((s) => s.updateHotelSection);
 
   const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>([]);
-  const [kitchenTemplates, setKitchenTemplates] = useState<
-    { id: string; name: string; items: { id: string; itemLabel: string }[] }[]
-  >([]);
+  const [kitchenTemplates, setKitchenTemplates] = useState(templateCache.get("kitchen") ?? []);
+  const kitchenInitialised = useRef(false);
 
-  // Load kitchen templates if this section has a kitchen sub-area
   const hasKitchen = subAreas.some((s) => s.subAreaKey === "kitchen");
+
+  // Load kitchen templates once (use cache if available)
   useEffect(() => {
-    if (!hasKitchen) return;
-    const kitchenSub = subAreas.find((s) => s.subAreaKey === "kitchen");
+    if (!hasKitchen || kitchenInitialised.current) return;
+    kitchenInitialised.current = true;
+
+    const cached = templateCache.get("kitchen");
+    if (cached) {
+      setKitchenTemplates(cached);
+      initKitchenChecklist(cached);
+      return;
+    }
+
     fetch("/api/templates?context=kitchen")
       .then((r) => r.json())
       .then((tmpls) => {
+        templateCache.set("kitchen", tmpls);
         setKitchenTemplates(tmpls);
-        if (kitchenSub && kitchenSub.checklist.length > 0) {
-          setKitchenChecklist(kitchenSub.checklist);
-        } else {
-          setKitchenChecklist(
-            tmpls.flatMap((t: { items: { id: string; itemLabel: string }[] }) =>
-              t.items.map((item) => ({
-                itemId: item.id,
-                itemLabel: item.itemLabel,
-                condition: null as null,
-                remarks: "",
-              }))
-            )
-          );
-        }
+        initKitchenChecklist(tmpls);
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKitchen]);
 
-  // Sync kitchen checklist
+  function initKitchenChecklist(tmpls: typeof kitchenTemplates) {
+    const kitchenSub = subAreas.find((s) => s.subAreaKey === "kitchen");
+    if (kitchenSub && kitchenSub.checklist.length > 0) {
+      setKitchenChecklist(kitchenSub.checklist);
+    } else {
+      setKitchenChecklist(
+        tmpls.flatMap((t) =>
+          t.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
+        )
+      );
+    }
+  }
+
+  // Sync kitchen checklist back to Zustand (debounced via checklist-item-row already)
+  const kitchenChecklistRef = useRef(kitchenChecklist);
+  kitchenChecklistRef.current = kitchenChecklist;
+
   useEffect(() => {
     if (!kitchenChecklist.length) return;
     const updated = subAreas.map((s) =>
       s.subAreaKey === "kitchen" ? { ...s, checklist: kitchenChecklist } : s
     );
     updateHotelSection(auditId, sectionKey, updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kitchenChecklist]);
 
-  function updateRemarks(subAreaKey: string, remarks: string) {
+  const updateRemarks = useCallback((subAreaKey: string, remarks: string) => {
     const updated = subAreas.map((s) => (s.subAreaKey === subAreaKey ? { ...s, remarks } : s));
     updateHotelSection(auditId, sectionKey, updated);
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subAreas, auditId, sectionKey]);
 
-  function updateKitchenItem(idx: number, updated: ChecklistEntry) {
+  const updateKitchenItem = useCallback((idx: number, updated: ChecklistEntry) => {
     setKitchenChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
-  }
+  }, []);
+
+  const updateChecklistItem = useCallback((subAreaKey: string, idx: number, updated: ChecklistEntry) => {
+    const updatedSubs = subAreas.map((s) =>
+      s.subAreaKey === subAreaKey
+        ? { ...s, checklist: s.checklist.map((c, i) => (i === idx ? updated : c)) }
+        : s
+    );
+    updateHotelSection(auditId, sectionKey, updatedSubs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subAreas, auditId, sectionKey]);
 
   return (
     <div className="space-y-4">
@@ -103,10 +135,7 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
                 {kitchenTemplates.map((tmpl) => {
                   const tmplItems = tmpl.items.map((ti) =>
                     kitchenChecklist.find((c) => c.itemId === ti.id) || {
-                      itemId: ti.id,
-                      itemLabel: ti.itemLabel,
-                      condition: null as null,
-                      remarks: "",
+                      itemId: ti.id, itemLabel: ti.itemLabel, condition: null as null, remarks: "",
                     }
                   );
                   return (
@@ -132,23 +161,15 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
                 })}
               </div>
             ) : (
-              // Generic checklist sub-area (no DB templates — admin configures these)
               <div className="space-y-2">
                 {sub.checklist.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">No checklist items configured for this area yet.</p>
+                  <p className="text-sm text-gray-400 italic">No checklist items configured. Admin can add them in Templates.</p>
                 ) : (
                   sub.checklist.map((item, idx) => (
                     <ChecklistItemRow
                       key={item.itemId || idx}
                       item={item}
-                      onChange={(updated) => {
-                        const updatedSubs = subAreas.map((s) =>
-                          s.subAreaKey === sub.subAreaKey
-                            ? { ...s, checklist: s.checklist.map((c, i) => (i === idx ? updated : c)) }
-                            : s
-                        );
-                        updateHotelSection(auditId, sectionKey, updatedSubs);
-                      }}
+                      onChange={(updated) => updateChecklistItem(sub.subAreaKey, idx, updated)}
                       showError={showErrors}
                     />
                   ))

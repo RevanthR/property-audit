@@ -116,14 +116,12 @@ function AuditStart({ params }: { params: Promise<{ propertyId: string }> }) {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative">
-              <Input
-                label="Auditor Name"
-                value={auditorName}
-                onChange={(e) => setAuditorName(e.target.value)}
-                placeholder="Your name"
-              />
-              <User className="absolute right-3 top-8 h-4 w-4 text-gray-400 pointer-events-none" />
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Auditor</p>
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                <User className="h-4 w-4 text-gray-400" />
+                <span className="text-sm text-gray-800">{auditorName}</span>
+              </div>
             </div>
 
             <div className="relative">

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthGuard } from "@/components/layout/auth-guard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, ListChecks, MessageSquare, Hash } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 
 interface ChecklistItem {
@@ -22,14 +22,46 @@ interface Template {
   id: string;
   name: string;
   context: string;
-  propertyType: string;
+  moduleType: string;
   items: ChecklistItem[];
 }
 
-const CONTEXT_LABELS: Record<string, string> = {
-  room_hostel: "Hostel Room Checklist",
-  room_hotel: "Hotel Room Checklist",
-  kitchen: "Kitchen Checklist",
+// Maps context prefix → display group label
+const HOTEL_SECTION_PREFIXES: Record<string, string> = {
+  hotel_front_office: "Front Office",
+  hotel_housekeeping: "Housekeeping",
+  hotel_engineering: "Engineering",
+  hotel_food_beverage: "Food & Beverage",
+  hotel_property_mgmt: "Property Management",
+  hotel_security: "Security",
+  hotel_finance: "Finance",
+  hotel_hr: "Human Resources",
+  hotel_guest_experience: "Guest Experience",
+};
+
+function getGroupKey(context: string): string {
+  if (context === "room_hostel") return "__hostel_room";
+  if (context === "room_hotel") return "__hotel_room";
+  if (context === "kitchen" || context.startsWith("kitchen_")) return "__kitchen";
+  for (const prefix of Object.keys(HOTEL_SECTION_PREFIXES)) {
+    if (context.startsWith(prefix)) return prefix;
+  }
+  return "__other";
+}
+
+function getGroupLabel(key: string): string {
+  if (key === "__hostel_room") return "Hostel Room Checklist";
+  if (key === "__hotel_room") return "Hotel Room Checklist";
+  if (key === "__kitchen") return "Kitchen Checklist";
+  if (key === "__other") return "Other";
+  return HOTEL_SECTION_PREFIXES[key] ?? key;
+}
+
+const MODULE_TYPE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  checklist: { icon: <ListChecks className="h-3 w-3" />, label: "Checklist", color: "bg-blue-100 text-blue-700" },
+  remarks:   { icon: <MessageSquare className="h-3 w-3" />, label: "Remarks", color: "bg-gray-100 text-gray-600" },
+  count:     { icon: <Hash className="h-3 w-3" />, label: "Count", color: "bg-orange-100 text-orange-700" },
+  status:    { icon: <ListChecks className="h-3 w-3" />, label: "Status", color: "bg-purple-100 text-purple-700" },
 };
 
 export default function TemplatesPage() {
@@ -45,14 +77,13 @@ function Templates() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [newItem, setNewItem] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch("/api/templates")
       .then((r) => r.json())
-      .then((data) => {
-        // Group by context → show unique context groups
-        const mainContexts = ["room_hostel", "room_hotel", "kitchen"];
-        setTemplates(data.filter((t: Template) => mainContexts.some((c) => t.context.startsWith(c.split("_")[0]))));
+      .then((data: Template[]) => {
+        setTemplates(data);
         setLoading(false);
       });
   }, []);
@@ -68,32 +99,36 @@ function Templates() {
   async function addItem(templateId: string) {
     const label = newItem[templateId]?.trim();
     if (!label) return;
-    const res = await fetch(`/api/templates/${templateId}/items`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemLabel: label, moduleType: "checklist", orderIndex: 9999 }),
-    });
-    const item = await res.json();
-    setTemplates((prev) =>
-      prev.map((t) => t.id === templateId ? { ...t, items: [...t.items, item] } : t)
-    );
-    setNewItem((prev) => ({ ...prev, [templateId]: "" }));
-    toast({ title: "Item added", variant: "success" });
+    setSaving((s) => new Set(s).add(templateId));
+    try {
+      const res = await fetch(`/api/templates/${templateId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemLabel: label, moduleType: "checklist", orderIndex: 9999 }),
+      });
+      const item = await res.json();
+      setTemplates((prev) =>
+        prev.map((t) => t.id === templateId ? { ...t, items: [...t.items, item] } : t)
+      );
+      setNewItem((prev) => ({ ...prev, [templateId]: "" }));
+      toast({ title: "Item added", variant: "success" });
+    } finally {
+      setSaving((s) => { const n = new Set(s); n.delete(templateId); return n; });
+    }
   }
 
   async function removeItem(templateId: string, itemId: string) {
     await fetch(`/api/templates/items/${itemId}`, { method: "DELETE" });
     setTemplates((prev) =>
       prev.map((t) =>
-        t.id === templateId
-          ? { ...t, items: t.items.filter((i) => i.id !== itemId) }
-          : t
+        t.id === templateId ? { ...t, items: t.items.filter((i) => i.id !== itemId) } : t
       )
     );
     toast({ title: "Item removed", variant: "success" });
   }
 
   async function updateItemLabel(templateId: string, item: ChecklistItem, label: string) {
+    if (!label.trim() || label === item.itemLabel) return;
     await fetch(`/api/templates/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -102,103 +137,140 @@ function Templates() {
     setTemplates((prev) =>
       prev.map((t) =>
         t.id === templateId
-          ? { ...t, items: t.items.map((i) => i.id === item.id ? { ...i, itemLabel: label } : i) }
+          ? { ...t, items: t.items.map((i) => (i.id === item.id ? { ...i, itemLabel: label } : i)) }
           : t
       )
     );
   }
 
-  // Group templates by context prefix
-  const byContext = templates.reduce<Record<string, Template[]>>((acc, t) => {
-    const ctx = t.context.startsWith("room_hostel") ? "room_hostel"
-      : t.context.startsWith("room_hotel") ? "room_hotel"
-      : "kitchen";
-    if (!acc[ctx]) acc[ctx] = [];
-    acc[ctx].push(t);
+  // Group templates by section
+  const groups = templates.reduce<Record<string, Template[]>>((acc, t) => {
+    const key = getGroupKey(t.context);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(t);
     return acc;
   }, {});
+
+  // Render order: hostel room, hotel room, kitchen, then hotel sections alphabetically
+  const orderedKeys = [
+    "__hostel_room",
+    "__hotel_room",
+    "__kitchen",
+    ...Object.keys(HOTEL_SECTION_PREFIXES),
+    "__other",
+  ].filter((k) => groups[k]?.length);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <main className="mx-auto max-w-3xl px-4 sm:px-6 py-8 space-y-6">
+      <main className="mx-auto max-w-3xl px-4 sm:px-6 py-8 space-y-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Checklist Templates</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Edit checklist items. Changes apply to new audits only — existing audits keep their original items.
+            Manage checklist items for each audit section. Changes apply to new audits only.
           </p>
         </div>
 
         {loading ? (
-          <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-16 rounded-xl bg-gray-200 animate-pulse" />)}</div>
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-14 rounded-xl bg-gray-200 animate-pulse" />
+            ))}
+          </div>
         ) : (
-          Object.entries(byContext).map(([ctx, tmpls]) => (
-            <div key={ctx}>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                {CONTEXT_LABELS[ctx] || ctx}
+          orderedKeys.map((groupKey) => (
+            <section key={groupKey}>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
+                {getGroupLabel(groupKey)}
               </h2>
-              <div className="space-y-3">
-                {tmpls.map((tmpl) => (
-                  <Card key={tmpl.id}>
-                    <CardHeader className="pb-2">
-                      <button
-                        onClick={() => toggle(tmpl.id)}
-                        className="flex w-full items-center justify-between text-left"
-                      >
-                        <CardTitle className="text-sm">{tmpl.name}</CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">{tmpl.items.length} items</Badge>
-                          {expanded.has(tmpl.id) ? (
-                            <ChevronUp className="h-4 w-4 text-gray-400" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-gray-400" />
+              <div className="space-y-2">
+                {groups[groupKey].map((tmpl) => {
+                  const isChecklist = tmpl.moduleType === "checklist";
+                  const isOpen = expanded.has(tmpl.id);
+                  const mtConfig = MODULE_TYPE_CONFIG[tmpl.moduleType] ?? MODULE_TYPE_CONFIG.remarks;
+
+                  return (
+                    <Card key={tmpl.id} className="overflow-hidden">
+                      <CardHeader className="py-3 px-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <CardTitle className="text-sm font-medium truncate">{tmpl.name}</CardTitle>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0 ${mtConfig.color}`}>
+                              {mtConfig.icon}
+                              {mtConfig.label}
+                            </span>
+                          </div>
+
+                          {isChecklist && (
+                            <button
+                              onClick={() => toggle(tmpl.id)}
+                              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                            >
+                              <span>{tmpl.items.length} items</span>
+                              {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </button>
+                          )}
+
+                          {!isChecklist && (
+                            <span className="text-xs text-gray-400 shrink-0">No checklist items</span>
                           )}
                         </div>
-                      </button>
-                    </CardHeader>
+                      </CardHeader>
 
-                    {expanded.has(tmpl.id) && (
-                      <CardContent className="pt-0 space-y-2">
-                        {tmpl.items.map((item) => (
-                          <div key={item.id} className="flex items-center gap-2 group">
-                            <GripVertical className="h-4 w-4 text-gray-200 shrink-0" />
-                            <input
-                              className="flex-1 text-sm border border-transparent rounded px-2 py-1 hover:border-gray-200 focus:border-blue-400 focus:outline-none bg-transparent"
-                              defaultValue={item.itemLabel}
-                              onBlur={(e) => {
-                                if (e.target.value !== item.itemLabel) {
-                                  updateItemLabel(tmpl.id, item, e.target.value);
-                                }
-                              }}
+                      {isChecklist && isOpen && (
+                        <CardContent className="pt-0 pb-4 px-4 border-t border-gray-100">
+                          {tmpl.items.length === 0 ? (
+                            <p className="text-xs text-gray-400 py-3 text-center">
+                              No items yet — add your first item below
+                            </p>
+                          ) : (
+                            <ul className="space-y-1 py-2">
+                              {tmpl.items.map((item, idx) => (
+                                <li key={item.id} className="flex items-center gap-2 group">
+                                  <span className="text-xs text-gray-300 w-5 text-right shrink-0">{idx + 1}.</span>
+                                  <GripVertical className="h-4 w-4 text-gray-200 shrink-0" />
+                                  <input
+                                    className="flex-1 text-sm border border-transparent rounded px-2 py-1 hover:border-gray-200 focus:border-blue-400 focus:outline-none bg-transparent"
+                                    defaultValue={item.itemLabel}
+                                    onBlur={(e) => updateItemLabel(tmpl.id, item, e.target.value)}
+                                  />
+                                  <button
+                                    onClick={() => removeItem(tmpl.id, item.id)}
+                                    className="text-gray-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                    title="Remove item"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {/* Add new item */}
+                          <div className="flex gap-2 pt-3 border-t border-gray-100 mt-2">
+                            <Input
+                              placeholder="Type item name and press Enter or click +"
+                              value={newItem[tmpl.id] || ""}
+                              onChange={(e) => setNewItem((prev) => ({ ...prev, [tmpl.id]: e.target.value }))}
+                              onKeyDown={(e) => e.key === "Enter" && addItem(tmpl.id)}
+                              className="text-sm"
                             />
-                            <button
-                              onClick={() => removeItem(tmpl.id, item.id)}
-                              className="text-gray-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            <Button
+                              size="sm"
+                              onClick={() => addItem(tmpl.id)}
+                              disabled={saving.has(tmpl.id) || !newItem[tmpl.id]?.trim()}
                             >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                              <Plus className="h-4 w-4" />
+                              Add
+                            </Button>
                           </div>
-                        ))}
-
-                        {/* Add new item */}
-                        <div className="flex gap-2 pt-2 border-t border-gray-100">
-                          <Input
-                            placeholder="Add new item..."
-                            value={newItem[tmpl.id] || ""}
-                            onChange={(e) => setNewItem((prev) => ({ ...prev, [tmpl.id]: e.target.value }))}
-                            onKeyDown={(e) => e.key === "Enter" && addItem(tmpl.id)}
-                            className="text-sm"
-                          />
-                          <Button size="sm" onClick={() => addItem(tmpl.id)}>
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    )}
-                  </Card>
-                ))}
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })}
               </div>
-            </div>
+            </section>
           ))
         )}
       </main>

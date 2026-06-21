@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type EquipmentDraft } from "@/lib/store/audit";
 import { ConditionSelect } from "@/components/audit/condition-select";
@@ -14,13 +14,17 @@ import type { Condition } from "@/lib/store/audit";
 export default function EquipmentPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, updateEquipment } = useAuditStore();
-  const draft = drafts[auditId];
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const updateEquipment = useAuditStore((s) => s.updateEquipment);
 
   const [equipment, setEquipment] = useState<EquipmentDraft[]>(draft?.equipment || []);
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (auditId) updateEquipment(auditId, equipment);
+    if (!auditId) return;
+    clearTimeout(debounceRef.current!);
+    debounceRef.current = setTimeout(() => updateEquipment(auditId, equipment), 400);
+    return () => clearTimeout(debounceRef.current!);
   }, [equipment, auditId, updateEquipment]);
 
   if (!draft) return null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type ChecklistEntry } from "@/lib/store/audit";
 import { ChecklistItemRow } from "@/components/audit/checklist-item-row";
@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
 
-function generateId() {
-  return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-}
+// Module-level template cache — fetched once per session per context
+const tmplCache = new Map<string, { id: string; name: string; items: { id: string; itemLabel: string }[] }[]>();
 
 export default function RoomChecklistPage({
   params,
@@ -19,48 +18,60 @@ export default function RoomChecklistPage({
 }) {
   const { propertyId, auditId, roomId } = use(params);
   const router = useRouter();
-  const { drafts, upsertRoom } = useAuditStore();
-  const draft = drafts[auditId];
-  const room = draft?.rooms.find((r) => r.id === roomId);
 
-  const [checklist, setChecklist] = useState<ChecklistEntry[]>([]);
-  const [templates, setTemplates] = useState<
-    { id: string; name: string; items: { id: string; itemLabel: string }[] }[]
-  >([]);
+  // Specific selectors — don't re-render when unrelated drafts change
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const room = useAuditStore(useCallback((s) => s.drafts[auditId]?.rooms.find((r) => r.id === roomId), [auditId, roomId]));
+  const upsertRoom = useAuditStore((s) => s.upsertRoom);
+
+  const [checklist, setChecklist] = useState<ChecklistEntry[]>(room?.checklist ?? []);
+  const [templates, setTemplates] = useState(tmplCache.get(draft?.propertyType ?? "") ?? []);
   const [showErrors, setShowErrors] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(templates.length === 0);
 
   useEffect(() => {
     if (!draft) return;
     const context = draft.propertyType === "hostel" ? "room_hostel" : "room_hotel";
+    const cached = tmplCache.get(context);
+    if (cached) {
+      setTemplates(cached);
+      initChecklist(cached);
+      setLoading(false);
+      return;
+    }
     fetch(`/api/templates?context=${context}`)
       .then((r) => r.json())
       .then((tmpls) => {
+        tmplCache.set(context, tmpls);
         setTemplates(tmpls);
-
-        // Build initial checklist from templates (or restore from draft)
-        if (room && room.checklist.length > 0) {
-          setChecklist(room.checklist);
-        } else {
-          const items: ChecklistEntry[] = tmpls.flatMap(
-            (t: { items: { id: string; itemLabel: string }[] }) =>
-              t.items.map((item) => ({
-                itemId: item.id,
-                itemLabel: item.itemLabel,
-                condition: null,
-                remarks: "",
-              }))
-          );
-          setChecklist(items);
-        }
+        initChecklist(tmpls);
         setLoading(false);
       });
-  }, [auditId, draft?.propertyType]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Save to store whenever checklist changes
+  function initChecklist(tmpls: typeof templates) {
+    if (room && room.checklist.length > 0) {
+      setChecklist(room.checklist);
+    } else {
+      setChecklist(
+        tmpls.flatMap((t) =>
+          t.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
+        )
+      );
+    }
+  }
+
+  // Debounce store writes — don't write Zustand on every single condition click
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!room || !checklist.length) return;
-    upsertRoom(auditId, { ...room, checklist });
+    clearTimeout(debounceRef.current!);
+    debounceRef.current = setTimeout(() => {
+      upsertRoom(auditId, { ...room, checklist });
+    }, 400);
+    return () => clearTimeout(debounceRef.current!);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checklist]);
 
   function updateItem(idx: number, updated: ChecklistEntry) {
@@ -68,7 +79,6 @@ export default function RoomChecklistPage({
   }
 
   function handleSave() {
-    // Validate: not_ok items must have remarks
     const hasErrors = checklist.some((c) => c.condition === "not_ok" && !c.remarks.trim());
     if (hasErrors) { setShowErrors(true); return; }
     router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`);
@@ -87,18 +97,12 @@ export default function RoomChecklistPage({
   const notOkCount = checklist.filter((c) => c.condition === "not_ok").length;
   const naCount = checklist.filter((c) => c.condition === "not_available").length;
   const doneCount = checklist.filter((c) => c.condition !== null).length;
-
-  // Group by template for hotel (multiple categories)
   const isHostel = draft.propertyType === "hostel";
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}
-          className="p-1 text-gray-400 hover:text-gray-700"
-        >
+        <button onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)} className="p-1 text-gray-400 hover:text-gray-700">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
@@ -107,13 +111,9 @@ export default function RoomChecklistPage({
         </div>
       </div>
 
-      {/* Progress + summary */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="w-full bg-gray-100 rounded-full h-2 mb-3">
-          <div
-            className="bg-blue-500 h-2 rounded-full transition-all"
-            style={{ width: `${(doneCount / checklist.length) * 100}%` }}
-          />
+          <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${checklist.length ? (doneCount / checklist.length) * 100 : 0}%` }} />
         </div>
         <div className="flex gap-4 text-xs">
           <span className="flex items-center gap-1 text-green-600"><CheckCircle className="h-3.5 w-3.5" /> {okCount} Ok</span>
@@ -129,55 +129,30 @@ export default function RoomChecklistPage({
         </div>
       )}
 
-      {/* Checklist */}
       {isHostel ? (
         <div className="space-y-2">
           {checklist.map((item, idx) => (
-            <ChecklistItemRow
-              key={item.itemId || idx}
-              item={item}
-              onChange={(updated) => updateItem(idx, updated)}
-              showError={showErrors}
-            />
+            <ChecklistItemRow key={item.itemId || idx} item={item} onChange={(u) => updateItem(idx, u)} showError={showErrors} />
           ))}
         </div>
       ) : (
-        // Hotel: grouped by category template
         <div className="space-y-6">
           {templates.map((tmpl) => {
-            const startIdx = checklist.findIndex((c) => {
-              return tmpl.items.some((ti) => ti.id === c.itemId);
-            });
             const tmplItems = tmpl.items.map((ti) =>
-              checklist.find((c) => c.itemId === ti.id) || {
-                itemId: ti.id,
-                itemLabel: ti.itemLabel,
-                condition: null as null,
-                remarks: "",
-              }
+              checklist.find((c) => c.itemId === ti.id) || { itemId: ti.id, itemLabel: ti.itemLabel, condition: null as null, remarks: "" }
             );
-
             return (
               <div key={tmpl.id}>
                 <div className="flex items-center gap-2 mb-3">
                   <h3 className="text-sm font-semibold text-gray-700">{tmpl.name}</h3>
                   <div className="flex-1 h-px bg-gray-200" />
-                  <Badge variant="secondary" className="text-xs">
-                    {tmplItems.filter((c) => c.condition !== null).length}/{tmplItems.length}
-                  </Badge>
+                  <Badge variant="secondary" className="text-xs">{tmplItems.filter((c) => c.condition !== null).length}/{tmplItems.length}</Badge>
                 </div>
                 <div className="space-y-2">
-                  {tmplItems.map((item, i) => {
-                    const globalIdx = checklist.findIndex(
-                      (c) => c.itemId === item.itemId
-                    );
+                  {tmplItems.map((item) => {
+                    const globalIdx = checklist.findIndex((c) => c.itemId === item.itemId);
                     return (
-                      <ChecklistItemRow
-                        key={item.itemId}
-                        item={item}
-                        onChange={(updated) => updateItem(globalIdx >= 0 ? globalIdx : i, updated)}
-                        showError={showErrors}
-                      />
+                      <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => updateItem(globalIdx >= 0 ? globalIdx : 0, u)} showError={showErrors} />
                     );
                   })}
                 </div>
@@ -188,15 +163,11 @@ export default function RoomChecklistPage({
       )}
 
       <div className="flex items-center justify-between pt-2">
-        <Button
-          variant="outline"
-          onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}
-        >
+        <Button variant="outline" onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
           ← Rooms List
         </Button>
         <Button onClick={handleSave}>
-          Save Room
-          <CheckCircle className="h-4 w-4" />
+          Save Room <CheckCircle className="h-4 w-4" />
         </Button>
       </div>
     </div>

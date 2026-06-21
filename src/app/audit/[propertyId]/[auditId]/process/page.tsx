@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore } from "@/lib/store/audit";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,23 +11,24 @@ import { ArrowRight } from "lucide-react";
 export default function ProcessPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, updateProcess } = useAuditStore();
-  const draft = drafts[auditId];
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const updateProcess = useAuditStore((s) => s.updateProcess);
 
   const [admissions, setAdmissions] = useState(draft?.process.admissionsRemarks || "");
   const [payments, setPayments] = useState(draft?.process.paymentsRemarks || "");
 
-  // Sync to store on every change
+  // Debounce store writes — only sync after 600ms of no typing
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!auditId) return;
-    updateProcess(auditId, { admissionsRemarks: admissions, paymentsRemarks: payments });
+    clearTimeout(debounceRef.current!);
+    debounceRef.current = setTimeout(() => {
+      updateProcess(auditId, { admissionsRemarks: admissions, paymentsRemarks: payments });
+    }, 600);
+    return () => clearTimeout(debounceRef.current!);
   }, [admissions, payments, auditId, updateProcess]);
 
   if (!draft) return null;
-
-  function goNext() {
-    router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`);
-  }
 
   return (
     <div className="space-y-6">
@@ -37,9 +38,7 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Admissions</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Admissions</CardTitle></CardHeader>
         <CardContent>
           <Textarea
             placeholder="Enter remarks about the admissions process..."
@@ -51,9 +50,7 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Payments</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Payments</CardTitle></CardHeader>
         <CardContent>
           <Textarea
             placeholder="Enter remarks about the payments process..."
@@ -65,9 +62,8 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={goNext}>
-          Next: Rooms
-          <ArrowRight className="h-4 w-4" />
+        <Button onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
+          Next: Rooms <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
     </div>

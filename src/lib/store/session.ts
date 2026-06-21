@@ -7,6 +7,7 @@ interface SessionUser {
   id: string;
   name: string;
   role: "admin" | "auditor";
+  hasAllPropertiesAccess: boolean;
 }
 
 interface SessionStore {

@@ -6,9 +6,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get("userId");
   const role = searchParams.get("role");
+  const allAccess = searchParams.get("allAccess");
 
-  // Admins see all active properties
-  if (role === "admin") {
+  // Admins and users with hasAllPropertiesAccess see all active properties
+  if (role === "admin" || allAccess === "true") {
     const all = await db
       .select()
       .from(properties)
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(all);
   }
 
-  // Auditors see only assigned properties
+  // Auditors with specific assignments
   if (!userId) return NextResponse.json([]);
   const assigned = await db
     .select({ property: properties })

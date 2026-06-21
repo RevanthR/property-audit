@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, checklistTemplates, checklistItems } from "@/lib/db";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const context = searchParams.get("context");
-  const propertyType = searchParams.get("type");
 
   const whereCondition = context
     ? and(eq(checklistTemplates.isActive, true), eq(checklistTemplates.context, context))
@@ -17,22 +16,19 @@ export async function GET(req: NextRequest) {
     .where(whereCondition)
     .orderBy(asc(checklistTemplates.orderIndex));
 
-  // Fetch items for each template
-  const result = await Promise.all(
-    templates.map(async (tmpl) => {
-      const items = await db
-        .select()
-        .from(checklistItems)
-        .where(
-          and(
-            eq(checklistItems.templateId, tmpl.id),
-            eq(checklistItems.isActive, true)
-          )
-        )
-        .orderBy(asc(checklistItems.orderIndex));
-      return { ...tmpl, items };
-    })
-  );
+  if (!templates.length) return NextResponse.json([]);
 
-  return NextResponse.json(result);
+  // Single bulk fetch instead of N+1
+  const templateIds = templates.map((t) => t.id);
+  const allItems = await db
+    .select()
+    .from(checklistItems)
+    .where(and(inArray(checklistItems.templateId, templateIds), eq(checklistItems.isActive, true)))
+    .orderBy(asc(checklistItems.orderIndex));
+
+  const itemsByTemplate = Object.groupBy(allItems, (i) => i.templateId);
+
+  return NextResponse.json(
+    templates.map((t) => ({ ...t, items: itemsByTemplate[t.id] ?? [] }))
+  );
 }

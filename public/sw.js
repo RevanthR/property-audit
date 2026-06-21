@@ -1,5 +1,5 @@
 // Service worker for PWA offline support
-const CACHE_NAME = "property-audit-v1";
+const CACHE_NAME = "property-audit-v2";
 const STATIC_ASSETS = ["/", "/login", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -22,6 +22,9 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // Never intercept Next.js internals — HMR chunks must always come fresh from the server
+  if (url.pathname.startsWith("/_next/")) return;
+
   // Network-first for API routes (always want fresh data)
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
@@ -34,7 +37,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for static assets, network-first for pages
+  // Stale-while-revalidate for app pages and static assets
   event.respondWith(
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request).then((response) => {

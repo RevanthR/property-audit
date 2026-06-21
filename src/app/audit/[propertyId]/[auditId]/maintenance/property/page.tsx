@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type ChecklistEntry } from "@/lib/store/audit";
 import { ChecklistItemRow } from "@/components/audit/checklist-item-row";
@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
 
+// Module-level cache — kitchen templates fetched once per session
+type KitchenTemplate = { id: string; name: string; items: { id: string; itemLabel: string }[] };
+let kitchenTmplCacheData: KitchenTemplate[] | null = null;
+
 export default function PropertyManagementPage({
   params,
 }: {
@@ -16,57 +20,72 @@ export default function PropertyManagementPage({
 }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, updateCommonArea } = useAuditStore();
-  const draft = drafts[auditId];
 
-  const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>([]);
-  const [kitchenTemplates, setKitchenTemplates] = useState<
-    { id: string; name: string; items: { id: string; itemLabel: string }[] }[]
-  >([]);
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const updateCommonArea = useAuditStore((s) => s.updateCommonArea);
+
+  const kitchenArea = draft?.commonAreas.find((a) => a.areaKey === "kitchen");
+  const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>(kitchenArea?.checklist ?? []);
+  const [kitchenTemplates, setKitchenTemplates] = useState<KitchenTemplate[]>(kitchenTmplCacheData ?? []);
   const [showErrors, setShowErrors] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(kitchenTmplCacheData === null);
+  const initialised = useRef(false);
 
   useEffect(() => {
-    if (!draft) return;
+    if (initialised.current) return;
+    initialised.current = true;
+    if (kitchenTmplCacheData) {
+      setKitchenTemplates(kitchenTmplCacheData);
+      initChecklist(kitchenTmplCacheData);
+      setLoading(false);
+      return;
+    }
     fetch("/api/templates?context=kitchen")
       .then((r) => r.json())
       .then((tmpls) => {
+        kitchenTmplCacheData = tmpls;
         setKitchenTemplates(tmpls);
-        const kitchenArea = draft.commonAreas.find((a) => a.areaKey === "kitchen");
-        if (kitchenArea && kitchenArea.checklist.length > 0) {
-          setKitchenChecklist(kitchenArea.checklist);
-        } else {
-          setKitchenChecklist(
-            tmpls.flatMap((t: { items: { id: string; itemLabel: string }[] }) =>
-              t.items.map((item) => ({
-                itemId: item.id,
-                itemLabel: item.itemLabel,
-                condition: null as null,
-                remarks: "",
-              }))
-            )
-          );
-        }
+        initChecklist(tmpls);
         setLoading(false);
       });
-  }, [auditId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Sync kitchen checklist to store
-  useEffect(() => {
-    if (!draft || !kitchenChecklist.length) return;
-    const kitchenArea = draft.commonAreas.find((a) => a.areaKey === "kitchen");
-    if (kitchenArea) {
-      updateCommonArea(auditId, { ...kitchenArea, checklist: kitchenChecklist });
+  function initChecklist(tmpls: KitchenTemplate[]) {
+    if (kitchenArea && kitchenArea.checklist.length > 0) {
+      setKitchenChecklist(kitchenArea.checklist);
+    } else {
+      setKitchenChecklist(
+        tmpls.flatMap((t) =>
+          t.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
+        )
+      );
     }
-  }, [kitchenChecklist]);
-
-  function updateKitchenItem(idx: number, updated: ChecklistEntry) {
-    setKitchenChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
   }
 
+  // Debounce kitchen checklist → Zustand writes
+  const kitchenDebounce = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!kitchenArea || !kitchenChecklist.length) return;
+    clearTimeout(kitchenDebounce.current!);
+    kitchenDebounce.current = setTimeout(() => {
+      updateCommonArea(auditId, { ...kitchenArea, checklist: kitchenChecklist });
+    }, 400);
+    return () => clearTimeout(kitchenDebounce.current!);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitchenChecklist]);
+
+  // Debounce remarks → Zustand writes
+  const remarksTimers = useRef<Record<string, NodeJS.Timeout>>({});
   function handleRemarksChange(areaKey: string, value: string) {
     const area = draft?.commonAreas.find((a) => a.areaKey === areaKey);
-    if (area) updateCommonArea(auditId, { ...area, remarks: value });
+    if (!area) return;
+    clearTimeout(remarksTimers.current[areaKey]);
+    // Update local display via draft optimistically isn't practical here — Zustand update is the only way
+    // so we debounce at a comfortable 400ms
+    remarksTimers.current[areaKey] = setTimeout(() => {
+      updateCommonArea(auditId, { ...area, remarks: value });
+    }, 400);
   }
 
   function handleNext() {
@@ -92,11 +111,8 @@ export default function PropertyManagementPage({
         </div>
       )}
 
-      {/* Kitchen — checklist */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Kitchen</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Kitchen</CardTitle></CardHeader>
         <CardContent>
           {loading ? (
             <div className="h-8 bg-gray-100 rounded animate-pulse" />
@@ -105,17 +121,12 @@ export default function PropertyManagementPage({
               {kitchenTemplates.map((tmpl) => {
                 const tmplItems = tmpl.items.map((ti) =>
                   kitchenChecklist.find((c) => c.itemId === ti.id) || {
-                    itemId: ti.id,
-                    itemLabel: ti.itemLabel,
-                    condition: null as null,
-                    remarks: "",
+                    itemId: ti.id, itemLabel: ti.itemLabel, condition: null as null, remarks: "",
                   }
                 );
                 return (
                   <div key={tmpl.id}>
-                    <h4 className="text-sm font-semibold text-gray-600 mb-2 pb-1 border-b border-gray-100">
-                      {tmpl.name}
-                    </h4>
+                    <h4 className="text-sm font-semibold text-gray-600 mb-2 pb-1 border-b border-gray-100">{tmpl.name}</h4>
                     <div className="space-y-2">
                       {tmplItems.map((item) => {
                         const globalIdx = kitchenChecklist.findIndex((c) => c.itemId === item.itemId);
@@ -123,7 +134,7 @@ export default function PropertyManagementPage({
                           <ChecklistItemRow
                             key={item.itemId}
                             item={item}
-                            onChange={(updated) => updateKitchenItem(globalIdx >= 0 ? globalIdx : 0, updated)}
+                            onChange={(u) => setKitchenChecklist((prev) => prev.map((c, i) => (i === (globalIdx >= 0 ? globalIdx : 0) ? u : c)))}
                             showError={showErrors}
                           />
                         );
@@ -137,21 +148,8 @@ export default function PropertyManagementPage({
         </CardContent>
       </Card>
 
-      {/* Other areas — remarks only */}
       {nonKitchenAreas.map((area) => (
-        <Card key={area.areaKey}>
-          <CardHeader>
-            <CardTitle className="text-base">{area.areaLabel}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              placeholder={`Enter remarks for ${area.areaLabel}...`}
-              value={area.remarks || ""}
-              onChange={(e) => handleRemarksChange(area.areaKey, e.target.value)}
-              rows={3}
-            />
-          </CardContent>
-        </Card>
+        <RemarksCard key={area.areaKey} area={area} onChange={(v) => handleRemarksChange(area.areaKey, v)} />
       ))}
 
       <div className="flex items-center justify-between pt-2">
@@ -159,10 +157,30 @@ export default function PropertyManagementPage({
           ← Back
         </Button>
         <Button onClick={handleNext}>
-          Next: Manpower
-          <ArrowRight className="h-4 w-4" />
+          Next: Manpower <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
     </div>
+  );
+}
+
+// Isolated component with local state so area remarks don't cause page re-renders
+function RemarksCard({ area, onChange }: { area: { areaKey: string; areaLabel: string; remarks: string }; onChange: (v: string) => void }) {
+  const [value, setValue] = useState(area.remarks || "");
+  // Sync local state if the area is restored from a saved draft (e.g. navigation back)
+  const areaKey = area.areaKey;
+  useEffect(() => { setValue(area.remarks || ""); }, [areaKey]);
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">{area.areaLabel}</CardTitle></CardHeader>
+      <CardContent>
+        <Textarea
+          placeholder={`Enter remarks for ${area.areaLabel}...`}
+          value={value}
+          onChange={(e) => { setValue(e.target.value); onChange(e.target.value); }}
+          rows={3}
+        />
+      </CardContent>
+    </Card>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type ManpowerDraft } from "@/lib/store/audit";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,13 +12,17 @@ import { ArrowRight, Users } from "lucide-react";
 export default function ManpowerPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, updateManpower } = useAuditStore();
-  const draft = drafts[auditId];
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const updateManpower = useAuditStore((s) => s.updateManpower);
 
   const [manpower, setManpower] = useState<ManpowerDraft[]>(draft?.manpower || []);
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (auditId) updateManpower(auditId, manpower);
+    if (!auditId) return;
+    clearTimeout(debounceRef.current!);
+    debounceRef.current = setTimeout(() => updateManpower(auditId, manpower), 600);
+    return () => clearTimeout(debounceRef.current!);
   }, [manpower, auditId, updateManpower]);
 
   if (!draft) return null;

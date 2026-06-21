@@ -239,6 +239,32 @@ export const useAuditStore = create<AuditStore>()(
           return { drafts: rest };
         }),
     }),
-    { name: "pa-audit-drafts" }
+    {
+      name: "pa-audit-drafts",
+      // Debounce localStorage writes — state updates in memory instantly (UI is reactive),
+      // but the expensive JSON.stringify + localStorage.setItem runs at most once per second.
+      storage: (() => {
+        const timers: Record<string, ReturnType<typeof setTimeout>> = {};
+        return {
+          getItem: (key: string) => {
+            if (typeof window === "undefined") return null;
+            const val = localStorage.getItem(key);
+            return val ? JSON.parse(val) : null;
+          },
+          setItem: (key: string, value: unknown) => {
+            clearTimeout(timers[key]);
+            timers[key] = setTimeout(() => {
+              if (typeof window !== "undefined") {
+                localStorage.setItem(key, JSON.stringify(value));
+              }
+            }, 1000);
+          },
+          removeItem: (key: string) => {
+            clearTimeout(timers[key]);
+            if (typeof window !== "undefined") localStorage.removeItem(key);
+          },
+        };
+      })(),
+    }
   )
 );

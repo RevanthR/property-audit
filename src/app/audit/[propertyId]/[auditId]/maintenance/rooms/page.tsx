@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore } from "@/lib/store/audit";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,9 @@ function generateId() {
 export default function RoomsPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, upsertRoom, removeRoom } = useAuditStore();
-  const draft = drafts[auditId];
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const upsertRoom = useAuditStore((s) => s.upsertRoom);
+  const removeRoom = useAuditStore((s) => s.removeRoom);
   const [roomInput, setRoomInput] = useState("");
   const [error, setError] = useState("");
 

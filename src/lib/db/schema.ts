@@ -36,7 +36,9 @@ export const moduleTypeEnum = pgEnum("module_type", [
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
-  pin: text("pin"), // only for admin
+  pin: text("pin"), // only for admin (4-digit PIN)
+  passwordHash: text("password_hash"), // for admin-created auditors
+  hasAllPropertiesAccess: boolean("has_all_properties_access").notNull().default(false),
   role: roleEnum("role").notNull().default("auditor"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -71,10 +73,13 @@ export const audits = pgTable("audits", {
   propertyId: uuid("property_id")
     .notNull()
     .references(() => properties.id, { onDelete: "cascade" }),
+  auditorId: uuid("auditor_id").references(() => users.id, { onDelete: "set null" }),
   auditorName: text("auditor_name").notNull(),
   auditDate: text("audit_date").notNull(), // stored as YYYY-MM-DD string
   status: auditStatusEnum("status").notNull().default("draft"),
-  currentStep: text("current_step").default("process"), // tracks where auditor left off
+  currentStep: text("current_step").default("process"),
+  completionPct: integer("completion_pct").notNull().default(0),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -233,6 +238,7 @@ export const checklistItems = pgTable("checklist_items", {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
+export type UserInsert = typeof users.$inferInsert;
 export type Property = typeof properties.$inferSelect;
 export type Audit = typeof audits.$inferSelect;
 export type AuditProcess = typeof auditProcess.$inferSelect;

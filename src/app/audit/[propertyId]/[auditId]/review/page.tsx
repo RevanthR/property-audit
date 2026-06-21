@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore } from "@/lib/store/audit";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertCircle, Download, Send } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
+import { isReadyToSubmit } from "@/lib/completion";
 
 export default function ReviewPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
   const router = useRouter();
-  const { drafts, clearDraft } = useAuditStore();
-  const draft = drafts[auditId];
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const clearDraft = useAuditStore((s) => s.clearDraft);
   const [submitting, setSubmitting] = useState(false);
 
   if (!draft) {
@@ -63,6 +64,7 @@ export default function ReviewPage({ params }: { params: Promise<{ propertyId: s
   }
 
   const isHostel = draft.propertyType === "hostel";
+  const { ready, issues } = isReadyToSubmit(draft);
 
   return (
     <div className="space-y-6">
@@ -143,12 +145,22 @@ export default function ReviewPage({ params }: { params: Promise<{ propertyId: s
         </>
       )}
 
+      {!ready && (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-1">
+          <p className="text-sm font-semibold text-amber-800">Audit is incomplete</p>
+          <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+            {issues.slice(0, 5).map((issue, i) => <li key={i}>{issue}</li>)}
+            {issues.length > 5 && <li>…and {issues.length - 5} more</li>}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
         <Button variant="outline" className="flex-1" onClick={handleSync}>
           <Download className="h-4 w-4" />
           Save Draft
         </Button>
-        <Button className="flex-1" onClick={handleSubmit} disabled={submitting}>
+        <Button className="flex-1" onClick={handleSubmit} disabled={submitting || !ready} title={!ready ? "Complete all sections before submitting" : undefined}>
           <Send className="h-4 w-4" />
           {submitting ? "Submitting..." : "Submit Audit"}
         </Button>

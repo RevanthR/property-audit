@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useState, useEffect, useRef } from "react";
 import { ConditionSelect } from "./condition-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ChecklistEntry, Condition } from "@/lib/store/audit";
@@ -11,9 +12,26 @@ interface ChecklistItemRowProps {
   showError?: boolean;
 }
 
-export function ChecklistItemRow({ item, onChange, showError }: ChecklistItemRowProps) {
+function ChecklistItemRowInner({ item, onChange, showError }: ChecklistItemRowProps) {
   const needsRemarks = item.condition === "not_ok";
   const hasRemarkError = showError && needsRemarks && !item.remarks.trim();
+
+  // Local state for remarks — debounce before writing to Zustand
+  const [localRemarks, setLocalRemarks] = useState(item.remarks);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep local in sync if parent resets the item (e.g. on load)
+  useEffect(() => {
+    setLocalRemarks(item.remarks);
+  }, [item.itemId]);
+
+  function handleRemarksChange(value: string) {
+    setLocalRemarks(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onChange({ ...item, remarks: value });
+    }, 300);
+  }
 
   return (
     <div
@@ -29,18 +47,16 @@ export function ChecklistItemRow({ item, onChange, showError }: ChecklistItemRow
         <span className="flex-1 text-sm text-gray-800 font-medium">{item.itemLabel}</span>
         <ConditionSelect
           value={item.condition}
-          onChange={(v: Condition) =>
-            onChange({ ...item, condition: v, remarks: v !== "not_ok" ? item.remarks : item.remarks })
-          }
+          onChange={(v: Condition) => onChange({ ...item, condition: v })}
         />
       </div>
 
       {needsRemarks && (
         <Textarea
           placeholder="Remarks (required)"
-          value={item.remarks}
+          value={localRemarks}
           required
-          onChange={(e) => onChange({ ...item, remarks: e.target.value })}
+          onChange={(e) => handleRemarksChange(e.target.value)}
           error={hasRemarkError ? "Remarks are required when condition is Not Ok" : undefined}
           rows={2}
           className="text-sm"
@@ -50,8 +66,8 @@ export function ChecklistItemRow({ item, onChange, showError }: ChecklistItemRow
       {!needsRemarks && item.condition && (
         <Textarea
           placeholder="Optional remarks..."
-          value={item.remarks}
-          onChange={(e) => onChange({ ...item, remarks: e.target.value })}
+          value={localRemarks}
+          onChange={(e) => handleRemarksChange(e.target.value)}
           rows={1}
           className="text-sm"
         />
@@ -59,3 +75,5 @@ export function ChecklistItemRow({ item, onChange, showError }: ChecklistItemRow
     </div>
   );
 }
+
+export const ChecklistItemRow = memo(ChecklistItemRowInner);
