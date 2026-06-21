@@ -1,0 +1,183 @@
+"use client";
+
+import { use, useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuditStore, type ChecklistEntry } from "@/lib/store/audit";
+import { ChecklistItemRow } from "@/components/audit/checklist-item-row";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRight } from "lucide-react";
+
+// Module-level cache — kitchen templates fetched once per session
+type KitchenTemplate = { id: string; name: string; items: { id: string; itemLabel: string }[] };
+let kitchenTmplCacheData: KitchenTemplate[] | null = null;
+
+export default function PropertyManagementPage({
+  params,
+}: {
+  params: Promise<{ propertyId: string; auditId: string }>;
+}) {
+  const { propertyId, auditId } = use(params);
+  const router = useRouter();
+
+  const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
+  const updateCommonArea = useAuditStore((s) => s.updateCommonArea);
+
+  const kitchenArea = draft?.commonAreas.find((a) => a.areaKey === "kitchen");
+  const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>(kitchenArea?.checklist ?? []);
+  const [kitchenTemplates, setKitchenTemplates] = useState<KitchenTemplate[]>(kitchenTmplCacheData ?? []);
+  const [showErrors, setShowErrors] = useState(false);
+  const [loading, setLoading] = useState(kitchenTmplCacheData === null);
+  const initialised = useRef(false);
+
+  useEffect(() => {
+    if (initialised.current) return;
+    initialised.current = true;
+    if (kitchenTmplCacheData) {
+      setKitchenTemplates(kitchenTmplCacheData);
+      initChecklist(kitchenTmplCacheData);
+      setLoading(false);
+      return;
+    }
+    fetch("/api/templates?context=kitchen")
+      .then((r) => r.json())
+      .then((tmpls) => {
+        kitchenTmplCacheData = tmpls;
+        setKitchenTemplates(tmpls);
+        initChecklist(tmpls);
+        setLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function initChecklist(tmpls: NonNullable<typeof kitchenTmplCacheData>) {
+    if (kitchenArea && kitchenArea.checklist.length > 0) {
+      setKitchenChecklist(kitchenArea.checklist);
+    } else {
+      setKitchenChecklist(
+        tmpls.flatMap((t) =>
+          t.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
+        )
+      );
+    }
+  }
+
+  // Debounce kitchen checklist → Zustand writes
+  const kitchenDebounce = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!kitchenArea || !kitchenChecklist.length) return;
+    clearTimeout(kitchenDebounce.current!);
+    kitchenDebounce.current = setTimeout(() => {
+      updateCommonArea(auditId, { ...kitchenArea, checklist: kitchenChecklist });
+    }, 400);
+    return () => clearTimeout(kitchenDebounce.current!);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitchenChecklist]);
+
+  // Debounce remarks → Zustand writes
+  const remarksTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  function handleRemarksChange(areaKey: string, value: string) {
+    const area = draft?.commonAreas.find((a) => a.areaKey === areaKey);
+    if (!area) return;
+    clearTimeout(remarksTimers.current[areaKey]);
+    // Update local display via draft optimistically isn't practical here — Zustand update is the only way
+    // so we debounce at a comfortable 400ms
+    remarksTimers.current[areaKey] = setTimeout(() => {
+      updateCommonArea(auditId, { ...area, remarks: value });
+    }, 400);
+  }
+
+  function handleNext() {
+    const hasErrors = kitchenChecklist.some((c) => c.condition === "not_ok" && !c.remarks.trim());
+    if (hasErrors) { setShowErrors(true); return; }
+    router.push(`/audit/${propertyId}/${auditId}/manpower`);
+  }
+
+  if (!draft) return null;
+
+  const nonKitchenAreas = draft.commonAreas.filter((a) => a.areaKey !== "kitchen");
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900">Property Management</h2>
+        <p className="text-sm text-gray-500 mt-1">Common areas inspection</p>
+      </div>
+
+      {showErrors && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          Please add remarks for all kitchen items marked as "Not Ok".
+        </div>
+      )}
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Kitchen</CardTitle></CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="h-8 bg-gray-100 rounded animate-pulse" />
+          ) : (
+            <div className="space-y-6">
+              {kitchenTemplates.map((tmpl) => {
+                const tmplItems = tmpl.items.map((ti) =>
+                  kitchenChecklist.find((c) => c.itemId === ti.id) || {
+                    itemId: ti.id, itemLabel: ti.itemLabel, condition: null as null, remarks: "",
+                  }
+                );
+                return (
+                  <div key={tmpl.id}>
+                    <h4 className="text-sm font-semibold text-gray-600 mb-2 pb-1 border-b border-gray-100">{tmpl.name}</h4>
+                    <div className="space-y-2">
+                      {tmplItems.map((item) => {
+                        const globalIdx = kitchenChecklist.findIndex((c) => c.itemId === item.itemId);
+                        return (
+                          <ChecklistItemRow
+                            key={item.itemId}
+                            item={item}
+                            onChange={(u) => setKitchenChecklist((prev) => prev.map((c, i) => (i === (globalIdx >= 0 ? globalIdx : 0) ? u : c)))}
+                            showError={showErrors}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {nonKitchenAreas.map((area) => (
+        <RemarksCard key={area.areaKey} area={area} onChange={(v) => handleRemarksChange(area.areaKey, v)} />
+      ))}
+
+      <div className="flex items-center justify-between pt-2">
+        <Button variant="outline" onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
+          ← Back
+        </Button>
+        <Button onClick={handleNext}>
+          Next: Manpower <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Isolated component with local state so area remarks don't cause page re-renders
+function RemarksCard({ area, onChange }: { area: { areaKey: string; areaLabel: string; remarks: string }; onChange: (v: string) => void }) {
+  const [value, setValue] = useState(area.remarks || "");
+  return (
+    <Card key={area.areaKey}>
+      <CardHeader><CardTitle className="text-base">{area.areaLabel}</CardTitle></CardHeader>
+      <CardContent>
+        <Textarea
+          placeholder={`Enter remarks for ${area.areaLabel}...`}
+          value={value}
+          onChange={(e) => { setValue(e.target.value); onChange(e.target.value); }}
+          rows={3}
+        />
+      </CardContent>
+    </Card>
+  );
+}

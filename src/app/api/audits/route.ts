@@ -5,24 +5,36 @@ import { eq, desc, and } from "drizzle-orm";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const propertyId = searchParams.get("propertyId");
-  const auditorName = searchParams.get("auditorName");
+  const status = searchParams.get("status") as "draft" | "submitted" | null;
 
-  let query = db
+  const conditions = [];
+  if (propertyId) conditions.push(eq(audits.propertyId, propertyId));
+  if (status) conditions.push(eq(audits.status, status));
+
+  const rows = await db
     .select({ audit: audits, property: properties })
     .from(audits)
     .innerJoin(properties, eq(audits.propertyId, properties.id))
+    .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(audits.updatedAt));
 
-  if (propertyId) {
-    query = query.where(eq(audits.propertyId, propertyId)) as typeof query;
-  }
-
-  const rows = await query;
   return NextResponse.json(rows);
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
+
+  // Enforce one active audit per property — return existing draft if one exists
+  const [existing] = await db
+    .select()
+    .from(audits)
+    .where(and(eq(audits.propertyId, body.propertyId), eq(audits.status, "draft")))
+    .limit(1);
+
+  if (existing) {
+    return NextResponse.json(existing, { status: 200 });
+  }
+
   const [audit] = await db
     .insert(audits)
     .values({

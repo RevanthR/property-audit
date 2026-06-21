@@ -8,6 +8,7 @@ import {
   serial,
   uuid,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -210,6 +211,21 @@ export const hotelSectionChecklistItems = pgTable(
   }
 );
 
+// ─── Section Locks (collaborative editing) ───────────────────────────────────
+// One lock row per (audit, section). Expires after 60s of no heartbeat.
+export const sectionLocks = pgTable(
+  "section_locks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    auditId: uuid("audit_id").notNull().references(() => audits.id, { onDelete: "cascade" }),
+    sectionKey: text("section_key").notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    userName: text("user_name").notNull(),
+    lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sl_audit_section_uniq").on(t.auditId, t.sectionKey)]
+);
+
 // ─── Checklist Templates (Admin-Configurable) ────────────────────────────────
 
 export const checklistTemplates = pgTable("checklist_templates", {
@@ -254,3 +270,4 @@ export type HotelSectionChecklistItem =
   typeof hotelSectionChecklistItems.$inferSelect;
 export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
+export type SectionLock = typeof sectionLocks.$inferSelect;
