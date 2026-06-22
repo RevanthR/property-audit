@@ -101,6 +101,23 @@ async function saveCommonAreas(auditId: string, draft: AuditDraft) {
   }
 }
 
+async function saveAssetInventory(auditId: string, draft: AuditDraft) {
+  await db.delete(schema.auditAssetInventory).where(eq(schema.auditAssetInventory.auditId, auditId));
+  const items = draft.assetInventory ?? [];
+  if (items.length) {
+    await db.insert(schema.auditAssetInventory).values(
+      items.map((item, idx) => ({
+        auditId,
+        templateItemId: item.templateItemId || null,
+        itemLabel: item.itemLabel,
+        condition: item.condition ?? null,
+        remarks: item.remarks,
+        orderIndex: idx,
+      }))
+    );
+  }
+}
+
 async function saveHotelSections(auditId: string, draft: AuditDraft) {
   const sectionMap: Record<string, { key: string; label: string; subAreas: typeof draft.frontOffice }> = {
     front_office: { key: "front_office", label: "Front Office Operations", subAreas: draft.frontOffice },
@@ -189,6 +206,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await saveRooms(id, draft);
+  await saveAssetInventory(id, draft);
 
   // Return new version so client can update
   const [updated] = await db.select({ version: schema.audits.version }).from(schema.audits).where(eq(schema.audits.id, id));

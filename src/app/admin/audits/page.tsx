@@ -7,7 +7,8 @@ import { AuthGuard } from "@/components/layout/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface AuditRow {
@@ -28,6 +29,8 @@ function AllAudits() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetch("/api/audits")
@@ -40,6 +43,20 @@ function AllAudits() {
       r.property.name.toLowerCase().includes(search.toLowerCase()) ||
       r.audit.auditorName.toLowerCase().includes(search.toLowerCase())
   );
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/audits/${deleteId}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((r) => r.audit.id !== deleteId));
+    } finally {
+      setDeleting(false);
+      setDeleteId(null);
+    }
+  }
+
+  const deleteTarget = rows.find((r) => r.audit.id === deleteId);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -81,6 +98,13 @@ function AllAudits() {
                 <Badge variant={row.audit.status === "submitted" ? "success" : "warning"}>
                   {row.audit.status === "submitted" ? "Submitted" : "Draft"}
                 </Badge>
+                <button
+                  onClick={() => setDeleteId(row.audit.id)}
+                  className="p-1.5 text-gray-300 hover:text-red-500 transition-colors rounded"
+                  title="Delete audit"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -100,6 +124,28 @@ function AllAudits() {
           )}
         </div>
       </main>
+
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete audit?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete the audit for{" "}
+              <strong>{deleteTarget?.property.name}</strong> by{" "}
+              <strong>{deleteTarget?.audit.auditorName}</strong> and all its data.
+              This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteId(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

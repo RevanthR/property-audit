@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, audits, properties, auditProcess, auditManpower, auditEquipment, auditRooms, roomChecklistItems, auditCommonAreas, commonAreaChecklistItems, auditHotelSections, hotelSectionChecklistItems } from "@/lib/db";
+import { db, audits, properties, auditProcess, auditManpower, auditEquipment, auditRooms, roomChecklistItems, auditCommonAreas, commonAreaChecklistItems, auditHotelSections, hotelSectionChecklistItems, auditAssetInventory } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -11,13 +11,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const [property] = await db.select().from(properties).where(eq(properties.id, audit.propertyId));
 
   // Fetch all top-level collections in parallel
-  const [processRows, manpower, equipment, rooms, commonAreas, hotelSections] = await Promise.all([
+  const [processRows, manpower, equipment, rooms, commonAreas, hotelSections, assetInventory] = await Promise.all([
     db.select().from(auditProcess).where(eq(auditProcess.auditId, id)),
     db.select().from(auditManpower).where(eq(auditManpower.auditId, id)),
     db.select().from(auditEquipment).where(eq(auditEquipment.auditId, id)),
     db.select().from(auditRooms).where(eq(auditRooms.auditId, id)),
     db.select().from(auditCommonAreas).where(eq(auditCommonAreas.auditId, id)),
     db.select().from(auditHotelSections).where(eq(auditHotelSections.auditId, id)),
+    db.select().from(auditAssetInventory).where(eq(auditAssetInventory.auditId, id)),
   ]);
 
   // Bulk-fetch all checklist items in 3 queries instead of N+1
@@ -42,10 +43,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     process: processRows[0] || null,
     manpower,
     equipment,
+    assetInventory,
     rooms: rooms.map((r) => ({ ...r, checklist: roomItemsByRoom[r.id] ?? [] })),
     commonAreas: commonAreas.map((a) => ({ ...a, checklist: areaItemsByArea[a.id] ?? [] })),
     hotelSections: hotelSections.map((s) => ({ ...s, checklist: sectionItemsBySection[s.id] ?? [] })),
   });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [existing] = await db.select({ id: audits.id }).from(audits).where(eq(audits.id, id));
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Child rows cascade-delete via FK constraints
+  await db.delete(audits).where(eq(audits.id, id));
+  return NextResponse.json({ ok: true });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -21,6 +21,7 @@ const STEP_LABELS: Record<string, string> = {
   property: "Common Areas",
   manpower: "Manpower",
   equipment: "Equipment",
+  assets: "Asset Inventory",
   front_office: "Front Office",
   housekeeping: "Housekeeping",
   engineering: "Engineering",
@@ -255,6 +256,7 @@ function getCurrentStepKey(pathname: string, type: string) {
   if (pathname.includes("/maintenance/property")) return "property";
   if (pathname.includes("/manpower")) return "manpower";
   if (pathname.includes("/equipment")) return "equipment";
+  if (pathname.includes("/assets")) return "assets";
   if (pathname.includes("/hotel/front-office")) return "front_office";
   if (pathname.includes("/hotel/housekeeping")) return "housekeeping";
   if (pathname.includes("/hotel/engineering")) return "engineering";

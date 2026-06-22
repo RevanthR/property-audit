@@ -34,7 +34,7 @@ function mapChecklist(items: any[]): ChecklistEntry[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function transformServerAuditToLocalDraft(data: any): AuditDraft {
-  const { audit, property, process, manpower, equipment, rooms, commonAreas, hotelSections } = data;
+  const { audit, property, process, manpower, equipment, assetInventory, rooms, commonAreas, hotelSections } = data;
   const type: "hostel" | "hotel" = property.type;
 
   // Rooms
@@ -116,6 +116,15 @@ export function transformServerAuditToLocalDraft(data: any): AuditDraft {
     });
   }
 
+  // Asset inventory
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const assetInventoryDraft = (assetInventory ?? []).map((a: any) => ({
+    templateItemId: a.templateItemId ?? a.id,
+    itemLabel: a.itemLabel,
+    condition: a.condition ?? null,
+    remarks: a.remarks ?? "",
+  }));
+
   return {
     auditId: audit.id,
     propertyId: property.id,
@@ -124,6 +133,7 @@ export function transformServerAuditToLocalDraft(data: any): AuditDraft {
     auditorName: audit.auditorName,
     auditDate: audit.auditDate,
     currentStep: audit.currentStep ?? (type === "hostel" ? "process" : "front_office"),
+    assetInventory: assetInventoryDraft,
     process: {
       admissionsRemarks: process?.admissionsRemarks ?? "",
       paymentsRemarks: process?.paymentsRemarks ?? "",

@@ -247,6 +247,7 @@ function buildDraft(auditId: string, property: Property, auditorName: string, au
     auditorName,
     auditDate,
     currentStep: property.type === "hostel" ? "process" : "front_office",
+    assetInventory: [],
     process: { admissionsRemarks: "", paymentsRemarks: "" },
     rooms: [],
     commonAreas: HOSTEL_COMMON_AREAS.map((a) => ({

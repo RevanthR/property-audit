@@ -103,6 +103,7 @@ export const HOSTEL_STEPS = [
   { key: "property", label: "Common Areas", href: "maintenance/property" },
   { key: "manpower", label: "Manpower", href: "manpower" },
   { key: "equipment", label: "Equipment", href: "equipment" },
+  { key: "assets", label: "Assets", href: "assets" },
   { key: "review", label: "Review", href: "review" },
 ];
 
@@ -118,5 +119,6 @@ export const HOTEL_STEPS = [
   { key: "finance", label: "Finance", href: "hotel/finance" },
   { key: "hr", label: "HR", href: "hotel/hr" },
   { key: "guest_exp", label: "Experience", href: "hotel/guest-experience" },
+  { key: "assets", label: "Assets", href: "assets" },
   { key: "review", label: "Review", href: "review" },
 ];

@@ -88,7 +88,9 @@ function computeHostelSteps(draft: AuditDraft): Record<string, StepCompletion> {
     touched: eqFilled > 0,
   };
 
-  return { process, rooms: roomsResult, property, manpower, equipment };
+  const assets = checklistPct(draft.assetInventory ?? []);
+
+  return { process, rooms: roomsResult, property, manpower, equipment, assets };
 }
 
 function computeHotelSteps(draft: AuditDraft): Record<string, StepCompletion> {
@@ -121,6 +123,8 @@ function computeHotelSteps(draft: AuditDraft): Record<string, StepCompletion> {
     roomsResult = checklistPct(allItems);
   }
 
+  const assets = checklistPct(draft.assetInventory ?? []);
+
   return {
     front_office: sectionCompletion(draft.frontOffice),
     guest_rooms: roomsResult,
@@ -132,6 +136,7 @@ function computeHotelSteps(draft: AuditDraft): Record<string, StepCompletion> {
     finance: sectionCompletion(draft.finance),
     hr: sectionCompletion(draft.humanResources),
     guest_exp: sectionCompletion(draft.guestExperience),
+    assets,
   };
 }
 

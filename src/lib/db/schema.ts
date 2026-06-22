@@ -211,6 +211,21 @@ export const hotelSectionChecklistItems = pgTable(
   }
 );
 
+// ─── Asset Inventory (shared hostel + hotel, one flat checklist per audit) ───
+
+export const auditAssetInventory = pgTable("audit_asset_inventory", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  auditId: uuid("audit_id")
+    .notNull()
+    .references(() => audits.id, { onDelete: "cascade" }),
+  templateItemId: uuid("template_item_id").references(() => checklistItems.id, { onDelete: "set null" }),
+  itemLabel: text("item_label").notNull(),
+  condition: conditionEnum("condition"),
+  remarks: text("remarks").notNull().default(""),
+  orderIndex: integer("order_index").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ─── Section Locks (collaborative editing) ───────────────────────────────────
 // One lock row per (audit, section). Expires after 60s of no heartbeat.
 export const sectionLocks = pgTable(
@@ -271,3 +286,4 @@ export type HotelSectionChecklistItem =
 export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type SectionLock = typeof sectionLocks.$inferSelect;
+export type AuditAssetInventory = typeof auditAssetInventory.$inferSelect;

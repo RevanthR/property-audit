@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2, Users, ListChecks, ClipboardList, CheckCircle2, Clock, AlertCircle, TrendingUp, ChevronRight, Calendar, BarChart2 } from "lucide-react";
+import { Building2, Users, ListChecks, ClipboardList, CheckCircle2, Clock, AlertCircle, TrendingUp, ChevronRight, Calendar, BarChart2, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Navbar } from "@/components/layout/navbar";
 import { AuthGuard } from "@/components/layout/auth-guard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 
@@ -51,6 +53,20 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "submitted">("all");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/audits/${deleteId}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((r) => r.audit.id !== deleteId));
+    } finally {
+      setDeleting(false);
+      setDeleteId(null);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/admin/overview")
@@ -186,7 +202,14 @@ function AdminDashboard() {
                           {audit.status === "submitted" ? "Done" : "Draft"}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 flex items-center gap-1 justify-end">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeleteId(audit.id); }}
+                          className="p-1 text-gray-300 hover:text-red-500 transition-colors rounded"
+                          title="Delete audit"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                         <ChevronRight className="h-4 w-4 text-gray-300" />
                       </td>
                     </tr>
@@ -197,6 +220,27 @@ function AdminDashboard() {
           )}
         </div>
       </main>
+
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete audit?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete the audit for{" "}
+              <strong>{rows.find((r) => r.audit.id === deleteId)?.property.name}</strong> and all its data.
+              This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteId(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

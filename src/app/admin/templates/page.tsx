@@ -43,6 +43,8 @@ function getGroupKey(context: string): string {
   if (context === "room_hostel") return "__hostel_room";
   if (context === "room_hotel") return "__hotel_room";
   if (context === "kitchen" || context.startsWith("kitchen_")) return "__kitchen";
+  if (context === "asset_inventory_hostel") return "__asset_hostel";
+  if (context === "asset_inventory_hotel") return "__asset_hotel";
   for (const prefix of Object.keys(HOTEL_SECTION_PREFIXES)) {
     if (context.startsWith(prefix)) return prefix;
   }
@@ -53,6 +55,8 @@ function getGroupLabel(key: string): string {
   if (key === "__hostel_room") return "Hostel Room Checklist";
   if (key === "__hotel_room") return "Hotel Room Checklist";
   if (key === "__kitchen") return "Kitchen Checklist";
+  if (key === "__asset_hostel") return "Hostel Asset Inventory";
+  if (key === "__asset_hotel") return "Hotel Asset Inventory";
   if (key === "__other") return "Other";
   return HOTEL_SECTION_PREFIXES[key] ?? key;
 }
@@ -156,6 +160,8 @@ function Templates() {
     "__hostel_room",
     "__hotel_room",
     "__kitchen",
+    "__asset_hostel",
+    "__asset_hotel",
     ...Object.keys(HOTEL_SECTION_PREFIXES),
     "__other",
   ].filter((k) => groups[k]?.length);

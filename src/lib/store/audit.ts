@@ -53,6 +53,13 @@ export interface HotelSubAreaDraft {
   checklist: ChecklistEntry[];
 }
 
+export interface AssetInventoryItemDraft {
+  templateItemId: string;
+  itemLabel: string;
+  condition: Condition | null;
+  remarks: string;
+}
+
 export interface AuditDraft {
   auditId: string;
   propertyId: string;
@@ -71,6 +78,9 @@ export interface AuditDraft {
   commonAreas: CommonAreaDraft[];
   manpower: ManpowerDraft[];
   equipment: EquipmentDraft[];
+
+  // Asset inventory (both property types)
+  assetInventory: AssetInventoryItemDraft[];
 
   // Hotel sections
   frontOffice: HotelSubAreaDraft[];
@@ -101,6 +111,7 @@ interface AuditStore {
   updateCommonArea: (auditId: string, area: CommonAreaDraft) => void;
   updateManpower: (auditId: string, manpower: ManpowerDraft[]) => void;
   updateEquipment: (auditId: string, equipment: EquipmentDraft[]) => void;
+  updateAssetInventory: (auditId: string, items: AssetInventoryItemDraft[]) => void;
   updateHotelSection: (
     auditId: string,
     sectionKey: keyof Pick<
@@ -208,6 +219,14 @@ export const useAuditStore = create<AuditStore>()(
           drafts: {
             ...state.drafts,
             [auditId]: { ...state.drafts[auditId], equipment },
+          },
+        })),
+
+      updateAssetInventory: (auditId, items) =>
+        set((state) => ({
+          drafts: {
+            ...state.drafts,
+            [auditId]: { ...state.drafts[auditId], assetInventory: items },
           },
         })),
 
