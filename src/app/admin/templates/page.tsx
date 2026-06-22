@@ -76,12 +76,36 @@ export default function TemplatesPage() {
   );
 }
 
+// Asset inventory sections that must always be visible even before template records exist
+const ASSET_SECTIONS: Record<string, { groupKey: string; context: string; propertyType: string; name: string }> = {
+  "__asset_hostel": { groupKey: "__asset_hostel", context: "asset_inventory_hostel", propertyType: "hostel", name: "Hostel Asset Inventory" },
+  "__asset_hotel":  { groupKey: "__asset_hotel",  context: "asset_inventory_hotel",  propertyType: "hotel",  name: "Hotel Asset Inventory"  },
+};
+
 function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [newItem, setNewItem] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<Set<string>>(new Set());
+  const [initializing, setInitializing] = useState<Set<string>>(new Set());
+
+  async function initializeSection(groupKey: string) {
+    const def = ASSET_SECTIONS[groupKey];
+    if (!def) return;
+    setInitializing((s) => new Set(s).add(groupKey));
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyType: def.propertyType, context: def.context, name: def.name }),
+      });
+      const tmpl: Template = await res.json();
+      setTemplates((prev) => [...prev, tmpl]);
+    } finally {
+      setInitializing((s) => { const n = new Set(s); n.delete(groupKey); return n; });
+    }
+  }
 
   useEffect(() => {
     fetch("/api/templates")
@@ -155,16 +179,16 @@ function Templates() {
     return acc;
   }, {});
 
-  // Render order: hostel room, hotel room, kitchen, then hotel sections alphabetically
+  // Asset inventory sections always appear even before DB records exist
   const orderedKeys = [
     "__hostel_room",
     "__hotel_room",
     "__kitchen",
-    "__asset_hostel",
-    "__asset_hotel",
+    "__asset_hostel",  // always shown
+    "__asset_hotel",   // always shown
     ...Object.keys(HOTEL_SECTION_PREFIXES),
     "__other",
-  ].filter((k) => groups[k]?.length);
+  ].filter((k) => k in ASSET_SECTIONS || groups[k]?.length);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -189,8 +213,27 @@ function Templates() {
               <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
                 {getGroupLabel(groupKey)}
               </h2>
+
+              {/* Empty state for asset inventory sections — show Initialize button */}
+              {groupKey in ASSET_SECTIONS && !groups[groupKey]?.length && (
+                <Card className="border-dashed border-gray-300 bg-gray-50">
+                  <CardContent className="py-6 flex flex-col items-center gap-3 text-center">
+                    <p className="text-sm text-gray-500">
+                      No checklist items yet. Initialize this section to start adding assets.
+                    </p>
+                    <button
+                      onClick={() => initializeSection(groupKey)}
+                      disabled={initializing.has(groupKey)}
+                      className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {initializing.has(groupKey) ? "Initializing…" : `Initialize ${getGroupLabel(groupKey)}`}
+                    </button>
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="space-y-2">
-                {groups[groupKey].map((tmpl) => {
+                {(groups[groupKey] ?? []).map((tmpl) => {
                   const isChecklist = tmpl.moduleType === "checklist";
                   const isOpen = expanded.has(tmpl.id);
                   const mtConfig = MODULE_TYPE_CONFIG[tmpl.moduleType] ?? MODULE_TYPE_CONFIG.remarks;

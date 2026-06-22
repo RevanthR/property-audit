@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, checklistTemplates, checklistItems } from "@/lib/db";
 import { eq, and, asc, inArray } from "drizzle-orm";
 
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const [template] = await db
+    .insert(checklistTemplates)
+    .values({
+      propertyType: body.propertyType,
+      context: body.context,
+      name: body.name,
+      moduleType: "checklist",
+      orderIndex: body.orderIndex ?? 100,
+      isActive: true,
+    })
+    .returning();
+  return NextResponse.json({ ...template, items: [] });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const context = searchParams.get("context");
