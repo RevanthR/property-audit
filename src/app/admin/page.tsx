@@ -150,7 +150,14 @@ function AdminDashboard() {
                     <tr
                       key={audit.id}
                       className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/reports/${audit.id}`)}
+                      onClick={() => {
+                        if (audit.status === "draft") {
+                          const firstStep = property.type === "hostel" ? "process" : "hotel/front-office";
+                          router.push(`/audit/${property.id}/${audit.id}/${firstStep}`);
+                        } else {
+                          router.push(`/reports/${audit.id}`);
+                        }
+                      }}
                     >
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900 truncate max-w-[160px]">{property.name}</p>

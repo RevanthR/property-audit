@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, audits, auditProcess, auditManpower, auditEquipment, auditRooms, roomChecklistItems, auditCommonAreas, commonAreaChecklistItems, auditHotelSections, hotelSectionChecklistItems } from "@/lib/db";
+import { db, audits, properties, auditProcess, auditManpower, auditEquipment, auditRooms, roomChecklistItems, auditCommonAreas, commonAreaChecklistItems, auditHotelSections, hotelSectionChecklistItems } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -7,6 +7,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const [audit] = await db.select().from(audits).where(eq(audits.id, id));
   if (!audit) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const [property] = await db.select().from(properties).where(eq(properties.id, audit.propertyId));
 
   // Fetch all top-level collections in parallel
   const [processRows, manpower, equipment, rooms, commonAreas, hotelSections] = await Promise.all([
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   return NextResponse.json({
     audit,
+    property,
     process: processRows[0] || null,
     manpower,
     equipment,

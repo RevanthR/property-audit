@@ -84,7 +84,14 @@ function AllAudits() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={() => router.push(`/reports/${row.audit.id}`)}
+                  onClick={() => {
+                    if (row.audit.status === "draft") {
+                      const firstStep = row.property.type === "hostel" ? "process" : "hotel/front-office";
+                      router.push(`/audit/${row.property.id}/${row.audit.id}/${firstStep}`);
+                    } else {
+                      router.push(`/reports/${row.audit.id}`);
+                    }
+                  }}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>

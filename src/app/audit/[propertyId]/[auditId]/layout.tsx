@@ -165,6 +165,9 @@ export default function AuditLayout({
     setConflictInfo(null);
   }
 
+  // useMemo must be called unconditionally — before any early return
+  const completions = useMemo(() => (draft ? computeStepCompletions(draft) : {}), [draft]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   if (!draft) {
     return (
@@ -179,7 +182,6 @@ export default function AuditLayout({
   }
 
   const steps = draft.propertyType === "hostel" ? HOSTEL_STEPS : HOTEL_STEPS;
-  const completions = useMemo(() => computeStepCompletions(draft), [draft]);
 
   const stepStatuses: Record<string, StepStatus> = {};
   for (const step of steps) {

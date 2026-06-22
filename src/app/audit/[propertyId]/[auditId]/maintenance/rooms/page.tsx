@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ArrowRight, Trash2, CheckCircle, Clock, ChevronRight } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Plus, ArrowRight, Trash2, CheckCircle, Clock, ChevronRight, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function generateId() {
@@ -22,6 +23,7 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
   const removeRoom = useAuditStore((s) => s.removeRoom);
   const [roomInput, setRoomInput] = useState("");
   const [error, setError] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   if (!draft) return null;
 
@@ -98,7 +100,7 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
                     room={room}
                     status="pending"
                     onOpen={() => openRoom(room.id)}
-                    onRemove={() => removeRoom(auditId, room.id)}
+                    onRemove={() => setConfirmDeleteId(room.id)}
                   />
                 ))}
               </div>
@@ -114,7 +116,7 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
                     room={room}
                     status="done"
                     onOpen={() => openRoom(room.id)}
-                    onRemove={() => removeRoom(auditId, room.id)}
+                    onRemove={() => setConfirmDeleteId(room.id)}
                   />
                 ))}
               </div>
@@ -122,6 +124,45 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
           )}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-base">Remove room?</DialogTitle>
+                <DialogDescription className="text-sm mt-0.5">
+                  Room{" "}
+                  <strong>
+                    {draft.rooms.find((r) => r.id === confirmDeleteId)?.roomNumber}
+                  </strong>{" "}
+                  and all its checklist data will be permanently deleted.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={() => {
+                if (confirmDeleteId) removeRoom(auditId, confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex items-center justify-between pt-2">
         <Button variant="outline" onClick={() => {
