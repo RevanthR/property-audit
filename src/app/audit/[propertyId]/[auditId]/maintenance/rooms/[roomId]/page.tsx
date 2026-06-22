@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type ChecklistEntry } from "@/lib/store/audit";
 import { ChecklistItemRow } from "@/components/audit/checklist-item-row";
+import { AddChecklistItemInline } from "@/components/audit/add-checklist-item-inline";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
@@ -78,6 +79,16 @@ export default function RoomChecklistPage({
     setChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
   }
 
+  function addCustomItem(label: string) {
+    const newItem: ChecklistEntry = {
+      itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      itemLabel: label,
+      condition: null,
+      remarks: "",
+    };
+    setChecklist((prev) => [...prev, newItem]);
+  }
+
   function handleSave() {
     const hasErrors = checklist.some((c) => c.condition === "not_ok" && !c.remarks.trim());
     if (hasErrors) { setShowErrors(true); return; }
@@ -134,10 +145,13 @@ export default function RoomChecklistPage({
           {checklist.map((item, idx) => (
             <ChecklistItemRow key={item.itemId || idx} item={item} onChange={(u) => updateItem(idx, u)} showError={showErrors} />
           ))}
+          <AddChecklistItemInline onAdd={addCustomItem} />
         </div>
       ) : (
         <div className="space-y-6">
           {templates.map((tmpl) => {
+            // Template items + any custom items that don't belong to a template
+            const tmplItemIds = new Set(tmpl.items.map((ti) => ti.id));
             const tmplItems = tmpl.items.map((ti) =>
               checklist.find((c) => c.itemId === ti.id) || { itemId: ti.id, itemLabel: ti.itemLabel, condition: null as null, remarks: "" }
             );
@@ -155,10 +169,22 @@ export default function RoomChecklistPage({
                       <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => updateItem(globalIdx >= 0 ? globalIdx : 0, u)} showError={showErrors} />
                     );
                   })}
+                  {/* Custom items added by auditor for this template group */}
+                  {checklist.filter((c) => c.itemId.startsWith("custom_") && !tmplItemIds.has(c.itemId)).map((item, idx) => {
+                    const globalIdx = checklist.findIndex((c) => c.itemId === item.itemId);
+                    return (
+                      <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => updateItem(globalIdx, u)} showError={showErrors} />
+                    );
+                  })}
                 </div>
+                <AddChecklistItemInline onAdd={addCustomItem} />
               </div>
             );
           })}
+          {/* If no templates yet, still allow adding custom items */}
+          {templates.length === 0 && (
+            <AddChecklistItemInline onAdd={addCustomItem} />
+          )}
         </div>
       )}
 

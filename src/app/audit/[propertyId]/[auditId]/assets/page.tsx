@@ -6,6 +6,7 @@ import { useAuditStore } from "@/lib/store/audit";
 import type { AssetInventoryItemDraft, Condition } from "@/lib/store/audit";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AddChecklistItemInline } from "@/components/audit/add-checklist-item-inline";
 import { ArrowRight, Package, CheckCircle2, AlertCircle, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,20 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
     debounceRef.current = setTimeout(() => updateAssetInventory(auditId, next), 400);
   }
 
+  function addCustomItem(label: string) {
+    const newItem: AssetInventoryItemDraft = {
+      templateItemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      itemLabel: label,
+      condition: null,
+      remarks: "",
+    };
+    setItems((prev) => {
+      const next = [...prev, newItem];
+      scheduleSync(next);
+      return next;
+    });
+  }
+
   if (!draft) return null;
 
   const filled = items.filter((i) => i.condition !== null).length;
@@ -116,22 +131,14 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
         <div className="flex items-center justify-center py-16">
           <div className="h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6 pb-8 text-center text-gray-400 space-y-2">
-            <Package className="h-8 w-8 mx-auto opacity-40" />
-            <p className="text-sm font-medium">No checklist items yet</p>
-            <p className="text-xs">
-              An admin needs to add items under{" "}
-              <strong>
-                {draft.propertyType === "hostel" ? "Hostel" : "Hotel"} Asset Inventory
-              </strong>{" "}
-              in the Templates section.
-            </p>
-          </CardContent>
-        </Card>
       ) : (
         <div className="space-y-3">
+          {items.length === 0 && (
+            <div className="text-center py-6 text-gray-400 space-y-1">
+              <Package className="h-8 w-8 mx-auto opacity-40" />
+              <p className="text-sm font-medium">No items yet — add yours below or ask admin to seed from Templates</p>
+            </div>
+          )}
           {items.map((item, idx) => (
             <Card
               key={item.templateItemId}
@@ -189,6 +196,7 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
               </CardContent>
             </Card>
           ))}
+          <AddChecklistItemInline onAdd={addCustomItem} />
         </div>
       )}
 

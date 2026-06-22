@@ -44,10 +44,12 @@ function Dashboard() {
   const { user } = useSession();
   const router = useRouter();
   const localDrafts = useAuditStore(useShallow((s) => Object.values(s.drafts).filter((d) => d.propertyId)));
+  const clearDraft = useAuditStore((s) => s.clearDraft);
   const [properties, setProperties] = useState<Property[]>([]);
   const [recentAudits, setRecentAudits] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [propertyTab, setPropertyTab] = useState<"hostel" | "hotel">("hostel");
 
   useEffect(() => {
     if (!user) return;
@@ -58,7 +60,17 @@ function Dashboard() {
       setProperties(Array.isArray(props) ? props : []);
       setRecentAudits(Array.isArray(audits) ? audits.slice(0, 10) : []);
       setLoading(false);
+
+      // Drop any local drafts whose audit record no longer exists on the server
+      if (Array.isArray(audits)) {
+        const serverIds = new Set(audits.map((r: AuditRow) => r.audit.id));
+        localDrafts.forEach((d) => {
+          if (!serverIds.has(d.auditId)) clearDraft(d.auditId);
+        });
+      }
     });
+  // localDrafts intentionally omitted — we only want this reconciliation on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const q = search.trim().toLowerCase();
@@ -172,31 +184,62 @@ function Dashboard() {
               <p className="text-xs text-gray-400">{filtered.length} result{filtered.length !== 1 ? "s" : ""} for &quot;{search}&quot;</p>
             )}
 
-            {hostels.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Home className="h-3.5 w-3.5" /> Hostels · {hostels.length}
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {hostels.map((p) => (
-                    <PropertyCard key={p.id} property={p} recentAudits={recentAudits} localDraft={draftByProperty[p.id]} />
-                  ))}
-                </div>
-              </section>
+            {/* Hostel / Hotel tab switcher */}
+            {!q && (
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 w-fit shadow-sm">
+                <button
+                  onClick={() => setPropertyTab("hostel")}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    propertyTab === "hostel"
+                      ? "bg-green-600 text-white shadow-sm"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Home className="h-4 w-4" />
+                  Hostels
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                    propertyTab === "hostel" ? "bg-green-500 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {hostels.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setPropertyTab("hotel")}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    propertyTab === "hotel"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <Hotel className="h-4 w-4" />
+                  Hotels
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                    propertyTab === "hotel" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {hotels.length}
+                  </span>
+                </button>
+              </div>
             )}
 
-            {hotels.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Hotel className="h-3.5 w-3.5" /> Hotels · {hotels.length}
-                </h2>
+            {/* Property grid — filtered by tab (or show all when searching) */}
+            {(() => {
+              const list = q ? filtered : (propertyTab === "hostel" ? hostels : hotels);
+              if (list.length === 0) {
+                return (
+                  <div className="text-center py-10 text-gray-400 text-sm">
+                    {q ? `No properties match "${search}"` : `No ${propertyTab}s found.`}
+                  </div>
+                );
+              }
+              return (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {hotels.map((p) => (
+                  {list.map((p) => (
                     <PropertyCard key={p.id} property={p} recentAudits={recentAudits} localDraft={draftByProperty[p.id]} />
                   ))}
                 </div>
-              </section>
-            )}
+              );
+            })()}
           </>
         )}
 

@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuditStore, type ChecklistEntry } from "@/lib/store/audit";
 import { ChecklistItemRow } from "@/components/audit/checklist-item-row";
+import { AddChecklistItemInline } from "@/components/audit/add-checklist-item-inline";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +62,16 @@ export default function PropertyManagementPage({
         )
       );
     }
+  }
+
+  function addKitchenItem(label: string) {
+    const newItem = {
+      itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      itemLabel: label,
+      condition: null as null,
+      remarks: "",
+    };
+    setKitchenChecklist((prev) => [...prev, newItem]);
   }
 
   // Debounce kitchen checklist → Zustand writes
@@ -139,7 +150,14 @@ export default function PropertyManagementPage({
                           />
                         );
                       })}
+                      {kitchenChecklist.filter((c) => c.itemId.startsWith("custom_")).map((item) => {
+                        const globalIdx = kitchenChecklist.findIndex((c) => c.itemId === item.itemId);
+                        return (
+                          <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => setKitchenChecklist((prev) => prev.map((c, i) => (i === globalIdx ? u : c)))} showError={showErrors} />
+                        );
+                      })}
                     </div>
+                    <AddChecklistItemInline onAdd={addKitchenItem} />
                   </div>
                 );
               })}

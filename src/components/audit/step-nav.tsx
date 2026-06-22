@@ -20,7 +20,7 @@ interface StepNavProps {
 
 export function StepNav({ steps, currentKey, stepStatuses }: StepNavProps) {
   return (
-    <nav className="overflow-x-auto">
+    <nav className="overflow-x-auto py-1">
       <ol className="flex items-center gap-0 min-w-max">
         {steps.map((step, i) => {
           const status = stepStatuses[step.key] ?? "untouched";
