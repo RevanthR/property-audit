@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, checklistTemplates, checklistItems } from "@/lib/db";
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { eq, and, asc, inArray, like } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       propertyType: body.propertyType,
       context: body.context,
       name: body.name,
-      moduleType: "checklist",
+      moduleType: body.moduleType ?? "checklist",
       orderIndex: body.orderIndex ?? 100,
       isActive: true,
     })
@@ -21,8 +21,13 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const context = searchParams.get("context");
+  // contextPrefix: matches context exactly OR any context that starts with prefix + "_"
+  // e.g. contextPrefix=hotel_housekeeping matches "hotel_housekeeping" and "hotel_housekeeping_public_cleaning"
+  const contextPrefix = searchParams.get("contextPrefix");
 
-  const whereCondition = context
+  const whereCondition = contextPrefix
+    ? and(eq(checklistTemplates.isActive, true), like(checklistTemplates.context, `${contextPrefix}%`))
+    : context
     ? and(eq(checklistTemplates.isActive, true), eq(checklistTemplates.context, context))
     : eq(checklistTemplates.isActive, true);
 

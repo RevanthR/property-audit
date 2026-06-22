@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-type CachedTemplate = { id: string; name: string; moduleType: string; items: { id: string; itemLabel: string }[] };
+type CachedTemplate = { id: string; name: string; context: string; moduleType: string; items: { id: string; itemLabel: string }[] };
 
 // Module-level cache so templates are fetched once per session
 const templateCache = new Map<string, CachedTemplate[]>();
@@ -55,8 +55,6 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>([]);
   const [kitchenTemplates, setKitchenTemplates] = useState(templateCache.get("kitchen") ?? []);
   const kitchenInitialised = useRef(false);
-  const sectionInitialised = useRef(false);
-
   const hasKitchen = subAreas.some((s) => s.subAreaKey === "kitchen");
 
   // Load kitchen templates once (use cache if available)
@@ -81,58 +79,59 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKitchen]);
 
-  // Load section-level template (e.g. hotel_front_office) and inject as __checklist sub-area
+  // Sync section templates on every mount — no cache guard so moduleType changes take effect immediately.
+  // Handles two cases:
+  //   1. Section-level template (context === sectionCtx) → creates/updates __checklist sub-area
+  //   2. Sub-area-level templates (context === sectionCtx_subAreaKey) → overrides static sub-area moduleType
   useEffect(() => {
-    if (sectionInitialised.current) return;
-    sectionInitialised.current = true;
+    const sectionCtx = SECTION_CONTEXT[sectionKey as string];
+    if (!sectionCtx) return;
 
-    const context = SECTION_CONTEXT[sectionKey as string];
-    if (!context) return;
-
-    const cacheKey = `section:${context}`;
-    const cached = templateCache.get(cacheKey);
-
-    const applyTemplate = (tmpls: CachedTemplate[]) => {
-      // No template record → admin hasn't initialized this section yet, don't add sub-area
-      if (!tmpls.length) return;
-
-      // Read current sub-areas fresh from store (not stale closure)
-      const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[]) ?? [];
-      if (currentSubs.some((s) => s.subAreaKey === "__checklist")) return; // already seeded
-
-      // Use the template's moduleType (admin may have set it to remarks/count/status)
-      const templateModuleType = (tmpls[0]?.moduleType ?? "checklist") as HotelSubAreaDraft["moduleType"];
-
-      const seeded: ChecklistEntry[] = templateModuleType === "checklist"
-        ? tmpls.flatMap((t) =>
-            t.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
-          )
-        : [];
-
-      const checklistSub: HotelSubAreaDraft = {
-        subAreaKey: "__checklist",
-        subAreaLabel: "Section Checklist",
-        moduleType: templateModuleType,
-        checklist: seeded,
-        remarks: "",
-      };
-
-      updateHotelSection(auditId, sectionKey, [...currentSubs, checklistSub]);
-    };
-
-    if (cached) {
-      applyTemplate(cached);
-      return;
-    }
-
-    fetch(`/api/templates?context=${context}`)
+    fetch(`/api/templates?contextPrefix=${sectionCtx}`)
       .then((r) => r.json())
-      .then((tmpls) => {
-        templateCache.set(cacheKey, tmpls);
-        applyTemplate(tmpls);
+      .then((tmpls: CachedTemplate[]) => {
+        const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[]) ?? [];
+        let updatedSubs = [...currentSubs];
+        let changed = false;
+
+        // ── Section-level template → __checklist sub-area ──────────────────────
+        const sectionTmpl = tmpls.find((t) => t.context === sectionCtx);
+        if (sectionTmpl) {
+          const newType = (sectionTmpl.moduleType ?? "checklist") as HotelSubAreaDraft["moduleType"];
+          const idx = updatedSubs.findIndex((s) => s.subAreaKey === "__checklist");
+
+          if (idx === -1) {
+            // First visit — seed the sub-area
+            const seeded: ChecklistEntry[] = newType === "checklist"
+              ? sectionTmpl.items.map((item) => ({ itemId: item.id, itemLabel: item.itemLabel, condition: null as null, remarks: "" }))
+              : [];
+            updatedSubs.push({ subAreaKey: "__checklist", subAreaLabel: "Section Checklist", moduleType: newType, checklist: seeded, remarks: "" });
+            changed = true;
+          } else if (updatedSubs[idx].moduleType !== newType) {
+            // Admin changed moduleType — update in place, preserve auditor's data
+            updatedSubs[idx] = { ...updatedSubs[idx], moduleType: newType };
+            changed = true;
+          }
+        }
+
+        // ── Sub-area-level templates → override static sub-area moduleType ─────
+        // e.g. context "hotel_housekeeping_public_cleaning" overrides subAreaKey "public_cleaning"
+        for (const tmpl of tmpls) {
+          if (tmpl.context === sectionCtx) continue;
+          if (!tmpl.context.startsWith(sectionCtx + "_")) continue;
+          const subAreaKey = tmpl.context.slice(sectionCtx.length + 1);
+          const newType = (tmpl.moduleType ?? "checklist") as HotelSubAreaDraft["moduleType"];
+          const idx = updatedSubs.findIndex((s) => s.subAreaKey === subAreaKey);
+          if (idx !== -1 && updatedSubs[idx].moduleType !== newType) {
+            updatedSubs[idx] = { ...updatedSubs[idx], moduleType: newType };
+            changed = true;
+          }
+        }
+
+        if (changed) updateHotelSection(auditId, sectionKey, updatedSubs);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [auditId, sectionKey]);
 
   function initKitchenChecklist(tmpls: typeof kitchenTemplates) {
     const kitchenSub = subAreas.find((s) => s.subAreaKey === "kitchen");

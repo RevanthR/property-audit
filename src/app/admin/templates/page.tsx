@@ -68,6 +68,35 @@ const INITIALIZABLE: Record<string, { context: string; propertyType: string; nam
   "__kitchen":               { context: "kitchen",                propertyType: "hostel", name: "Kitchen Checklist"              },
 };
 
+// Static hotel sub-areas that have moduleType: "checklist" in audit-config.ts.
+// Admins can create per-sub-area overrides (context = sectionContextPrefix_subAreaKey)
+// which let them change that specific sub-area's moduleType without affecting others.
+const HOTEL_SUBAREAS: Record<string, { subAreaKey: string; subAreaLabel: string }[]> = {
+  "hotel_housekeeping":    [{ subAreaKey: "public_cleaning",  subAreaLabel: "Public Area Cleaning" }],
+  "hotel_engineering":     [
+    { subAreaKey: "electrical",   subAreaLabel: "Electrical Systems" },
+    { subAreaKey: "plumbing",     subAreaLabel: "Plumbing Systems" },
+    { subAreaKey: "hvac",         subAreaLabel: "HVAC Systems" },
+    { subAreaKey: "elevators",    subAreaLabel: "Elevators" },
+    { subAreaKey: "fire_safety",  subAreaLabel: "Fire & Safety Systems" },
+  ],
+  "hotel_food_beverage":   [
+    { subAreaKey: "kitchen",  subAreaLabel: "Kitchen" },
+    { subAreaKey: "stores",   subAreaLabel: "Stores" },
+  ],
+  "hotel_property_mgmt":   [
+    { subAreaKey: "public_washrooms", subAreaLabel: "Public Washrooms" },
+    { subAreaKey: "spa_gym",          subAreaLabel: "Spa / Gym" },
+    { subAreaKey: "swimming_pool",    subAreaLabel: "Swimming Pool" },
+  ],
+  "hotel_security":        [
+    { subAreaKey: "cctv",        subAreaLabel: "CCTV" },
+    { subAreaKey: "fire_safety", subAreaLabel: "Fire Safety" },
+  ],
+  "hotel_finance":         [{ subAreaKey: "licenses", subAreaLabel: "Statutory Licenses" }],
+  "hotel_hr":              [{ subAreaKey: "grooming", subAreaLabel: "Staff Grooming" }],
+};
+
 function getGroupKey(context: string): string {
   if (context === "room_hostel") return "__hostel_room";
   if (context === "room_hotel")  return "__hotel_room";
@@ -135,6 +164,23 @@ function Templates() {
       setTemplates((prev) => [...prev, tmpl]);
     } finally {
       setInitializing((s) => { const n = new Set(s); n.delete(groupKey); return n; });
+    }
+  }
+
+  async function createSubAreaOverride(sectionContextPrefix: string, subAreaKey: string, subAreaLabel: string) {
+    const context = `${sectionContextPrefix}_${subAreaKey}`;
+    setInitializing((s) => new Set(s).add(context));
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyType: "hotel", context, name: subAreaLabel, moduleType: "checklist" }),
+      });
+      const tmpl: Template = await res.json();
+      setTemplates((prev) => [...prev, tmpl]);
+      toast({ title: `Override created for ${subAreaLabel}`, variant: "success" });
+    } finally {
+      setInitializing((s) => { const n = new Set(s); n.delete(context); return n; });
     }
   }
 
@@ -264,8 +310,10 @@ function Templates() {
           <div className="space-y-8">
             {activeSections.map((sec) => {
               const sectionTemplates = groups[sec.groupKey] ?? [];
+              // Section-level = exact context match; sub-area overrides have a longer context like "hotel_housekeeping_public_cleaning"
+              const sectionLevelTemplates = sectionTemplates.filter((t) => t.context === sec.contextPrefix);
               const isInitializable = sec.groupKey in INITIALIZABLE;
-              const isEmpty = sectionTemplates.length === 0;
+              const isSectionEmpty = sectionLevelTemplates.length === 0;
               const accentColor = tab === "hostel" ? "text-green-700" : "text-blue-700";
               const borderColor = tab === "hostel" ? "border-l-green-500" : "border-l-blue-500";
 
@@ -275,15 +323,15 @@ function Templates() {
                     <h2 className={`text-sm font-semibold ${accentColor} uppercase tracking-wide`}>
                       {sec.label}
                     </h2>
-                    {!isEmpty && (
+                    {!isSectionEmpty && (
                       <span className="text-xs text-gray-400">
-                        ({sectionTemplates.reduce((n, t) => n + t.items.length, 0)} items)
+                        ({sectionLevelTemplates.reduce((n, t) => n + t.items.length, 0)} items)
                       </span>
                     )}
                   </div>
 
                   {/* Empty state — show Create button for any initializable section */}
-                  {isInitializable && isEmpty && (
+                  {isInitializable && isSectionEmpty && (
                     <Card className="border-dashed border-gray-300 bg-gray-50">
                       <CardContent className="py-5 flex flex-col items-center gap-3 text-center">
                         <p className="text-sm text-gray-500">
@@ -302,9 +350,10 @@ function Templates() {
                     </Card>
                   )}
 
-                  {!isEmpty && (
+                  {!isSectionEmpty && (
                     <div className="space-y-2">
-                      {sectionTemplates.map((tmpl) => {
+                      {/* Section-level templates only; sub-area overrides are shown separately below */}
+                      {sectionLevelTemplates.map((tmpl) => {
                         const isChecklist = tmpl.moduleType === "checklist";
                         const isOpen = expanded.has(tmpl.id);
                         const mtConfig = MODULE_TYPE_CONFIG[tmpl.moduleType] ?? MODULE_TYPE_CONFIG.remarks;
@@ -408,6 +457,86 @@ function Templates() {
                       })}
                     </div>
                   )}
+
+                  {/* Sub-area overrides — only for hotel sections with static checklist sub-areas */}
+                  {tab === "hotel" && HOTEL_SUBAREAS[sec.groupKey]?.length > 0 && (() => {
+                    const subAreas = HOTEL_SUBAREAS[sec.groupKey];
+                    const subAreaTemplates = sectionTemplates.filter((t) => t.context !== sec.contextPrefix);
+                    const hasAnySubOverride = subAreaTemplates.length > 0;
+                    const needsOverride = subAreas.filter((sa) => !subAreaTemplates.some((t) => t.context === `${sec.contextPrefix}_${sa.subAreaKey}`));
+
+                    return (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
+                          Sub-area type overrides
+                          {hasAnySubOverride && <span className="text-[10px] normal-case font-normal">(overrides default moduleType per sub-area)</span>}
+                        </p>
+
+                        {/* Existing sub-area override template cards */}
+                        {subAreaTemplates.map((tmpl) => {
+                          const mtConfig = MODULE_TYPE_CONFIG[tmpl.moduleType] ?? MODULE_TYPE_CONFIG.remarks;
+                          const isBusy = changingType.has(tmpl.id);
+                          return (
+                            <Card key={tmpl.id} className="overflow-hidden border-dashed border-gray-300">
+                              <CardHeader className="py-2.5 px-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[10px] font-medium bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 shrink-0">sub-area</span>
+                                    <span className="text-sm font-medium truncate text-gray-700">{tmpl.name}</span>
+                                    <div className="relative shrink-0">
+                                      <select
+                                        value={tmpl.moduleType}
+                                        disabled={isBusy}
+                                        onChange={(e) => updateModuleType(tmpl.id, e.target.value)}
+                                        className={`appearance-none cursor-pointer rounded-full pl-6 pr-5 py-0.5 text-[11px] font-medium border-0 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 disabled:opacity-50 ${mtConfig.color}`}
+                                        title="Change sub-area type"
+                                      >
+                                        <option value="checklist">Checklist</option>
+                                        <option value="remarks">Remarks</option>
+                                        <option value="count">Count</option>
+                                        <option value="status">Status</option>
+                                      </select>
+                                      <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2">
+                                        {isBusy
+                                          ? <span className="inline-block h-3 w-3 border border-current border-t-transparent rounded-full animate-spin" />
+                                          : mtConfig.icon}
+                                      </span>
+                                      <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-60">
+                                        <ChevronDown className="h-2.5 w-2.5" />
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs text-gray-400 shrink-0 italic">
+                                    overrides default
+                                  </span>
+                                </div>
+                              </CardHeader>
+                            </Card>
+                          );
+                        })}
+
+                        {/* Buttons to create overrides for sub-areas that don't have one yet */}
+                        {needsOverride.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {needsOverride.map((sa) => {
+                              const ctx = `${sec.contextPrefix}_${sa.subAreaKey}`;
+                              return (
+                                <button
+                                  key={sa.subAreaKey}
+                                  onClick={() => createSubAreaOverride(sec.contextPrefix, sa.subAreaKey, sa.subAreaLabel)}
+                                  disabled={initializing.has(ctx)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 disabled:opacity-50 transition-colors"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  {initializing.has(ctx) ? "Creating…" : `Override: ${sa.subAreaLabel}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </section>
               );
             })}
