@@ -94,13 +94,21 @@ export default function PropertyManagementPage({
     setKitchenChecklist((prev) => [...prev, newItem]);
   }
 
-  // Debounce kitchen checklist → Zustand writes
+  // Debounce kitchen checklist → Zustand writes.
+  // Do NOT guard on kitchenArea — if the common area is missing from the draft
+  // (can happen when the transform only includes server-saved areas), we still
+  // want to write so we create the entry via updateCommonArea's upsert logic.
+  const kitchenAreaRef = useRef(kitchenArea);
+  kitchenAreaRef.current = kitchenArea;
   const kitchenDebounce = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!kitchenArea || !kitchenChecklist.length) return;
+    if (!kitchenChecklist.length) return;
     clearTimeout(kitchenDebounce.current!);
     kitchenDebounce.current = setTimeout(() => {
-      updateCommonArea(auditId, { ...kitchenArea, checklist: kitchenChecklist });
+      const base = kitchenAreaRef.current ?? {
+        areaKey: "kitchen", areaLabel: "Kitchen", moduleType: "checklist" as const, remarks: "",
+      };
+      updateCommonArea(auditId, { ...base, checklist: kitchenChecklist });
     }, 400);
     return () => clearTimeout(kitchenDebounce.current!);
   // eslint-disable-next-line react-hooks/exhaustive-deps

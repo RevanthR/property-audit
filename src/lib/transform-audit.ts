@@ -46,24 +46,25 @@ export function transformServerAuditToLocalDraft(data: any): AuditDraft {
     checklist: mapChecklist(r.checklist ?? []),
   }));
 
-  // Hostel: common areas
-  const commonAreasDraft =
-    (commonAreas ?? []).length > 0
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (commonAreas as any[]).map((a) => ({
-          areaKey: a.areaKey,
-          areaLabel: a.areaLabel,
-          moduleType: a.moduleType as "remarks" | "checklist",
-          remarks: a.remarks ?? "",
-          checklist: mapChecklist(a.checklist ?? []),
-        }))
-      : HOSTEL_COMMON_AREAS.map((a) => ({
-          areaKey: a.key,
-          areaLabel: a.label,
-          moduleType: a.type as "remarks" | "checklist",
-          remarks: "",
-          checklist: [],
-        }));
+  // Hostel: common areas — always seed from config so every area is present,
+  // then overlay with whatever the server has saved. Previously this was all-or-nothing
+  // (if ANY area was saved, the whole list came from the server — dropping areas that
+  // had never been written, e.g. a kitchen checklist where all conditions were still null).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const serverAreasByKey = new Map<string, any>((commonAreas ?? []).map((a: any) => [a.areaKey, a]));
+  const commonAreasDraft = HOSTEL_COMMON_AREAS.map((a) => {
+    const server = serverAreasByKey.get(a.key);
+    if (!server) {
+      return { areaKey: a.key, areaLabel: a.label, moduleType: a.type as "remarks" | "checklist", remarks: "", checklist: [] };
+    }
+    return {
+      areaKey: server.areaKey,
+      areaLabel: server.areaLabel,
+      moduleType: server.moduleType as "remarks" | "checklist",
+      remarks: server.remarks ?? "",
+      checklist: mapChecklist(server.checklist ?? []),
+    };
+  });
 
   // Hostel: manpower (merge DB data with config labels)
   const manpowerDraft = HOSTEL_MANPOWER.map((m) => {
