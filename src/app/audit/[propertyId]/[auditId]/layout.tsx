@@ -144,12 +144,23 @@ export default function AuditLayout({
     } catch { /* silent */ }
   }, [auditId, initDraft, markSynced]);
 
-  // Auto-sync: once after 5s (catches quick edits before the 30s interval fires),
-  // then every 30s while the page is open.
+  // Debounced sync on every draft change — fires 1.5s after the last edit so data
+  // reaches the DB within seconds of any change, not on a 30s clock.
+  // Skip the very first render so loading a draft from DB/localStorage doesn't trigger a write.
+  const hasHydrated = useRef(false);
+  const changeDebounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    const initial = setTimeout(syncToDb, 5000);
+    if (!hasHydrated.current) { hasHydrated.current = true; return; }
+    if (!draft) return;
+    clearTimeout(changeDebounceRef.current!);
+    changeDebounceRef.current = setTimeout(syncToDb, 1500);
+    return () => clearTimeout(changeDebounceRef.current!);
+  }, [draft, syncToDb]);
+
+  // 30s heartbeat as a fallback (covers cases where the draft ref didn't change but time passed).
+  useEffect(() => {
     const recurring = setInterval(syncToDb, 30000);
-    return () => { clearTimeout(initial); clearInterval(recurring); };
+    return () => clearInterval(recurring);
   }, [syncToDb]);
   useEffect(() => {
     const onHide = () => syncToDb(true);
