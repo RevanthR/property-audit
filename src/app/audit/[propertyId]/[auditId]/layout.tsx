@@ -162,6 +162,27 @@ export default function AuditLayout({
     const recurring = setInterval(syncToDb, 30000);
     return () => clearInterval(recurring);
   }, [syncToDb]);
+
+  // Poll for version changes every 5s while the tab is visible.
+  // Only fetches full data when another device has actually pushed something newer.
+  useEffect(() => {
+    const poll = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/audits/${auditId}/version`);
+        if (!res.ok) return;
+        const { version: serverVersion } = await res.json();
+        if (serverVersion > (draftRef.current?.version ?? -1)) {
+          const full = await fetch(`/api/audits/${auditId}`);
+          if (!full.ok) return;
+          const data = await full.json();
+          if (data?.audit) initDraft(transformServerAuditToLocalDraft(data));
+        }
+      } catch { /* silent */ }
+    };
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [auditId, initDraft]);
   useEffect(() => {
     const onHide = () => syncToDb(true);
     const onVis = () => {
