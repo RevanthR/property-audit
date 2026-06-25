@@ -17,9 +17,18 @@ export default function ManpowerPage({ params }: { params: Promise<{ propertyId:
 
   const [manpower, setManpower] = useState<ManpowerDraft[]>(draft?.manpower || []);
 
+  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || !draft) return;
+    synced.current = true;
+    setManpower(draft.manpower);
+  }, [draft]);
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!auditId) return;
+    // Guard: never write an empty array — that would DELETE all manpower rows in the DB.
+    if (!auditId || !manpower.length) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => updateManpower(auditId, manpower), 600);
     return () => clearTimeout(debounceRef.current!);

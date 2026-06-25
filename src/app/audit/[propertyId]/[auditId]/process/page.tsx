@@ -17,7 +17,19 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
   const [admissions, setAdmissions] = useState(draft?.process.admissionsRemarks || "");
   const [payments, setPayments] = useState(draft?.process.paymentsRemarks || "");
 
-  // Debounce store writes — only sync after 600ms of no typing
+  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
+  // Without this, useState initialises to "" before IDB resolves and the debounce below
+  // fires 600ms later with empty strings, overwriting saved data in Zustand and then in DB.
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || !draft) return;
+    synced.current = true;
+    setAdmissions(draft.process.admissionsRemarks || "");
+    setPayments(draft.process.paymentsRemarks || "");
+  }, [draft]);
+
+  // Debounce store writes — only after 600ms of no typing.
+  // The sync effect above corrects the initial empty values before this debounce fires.
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!auditId) return;

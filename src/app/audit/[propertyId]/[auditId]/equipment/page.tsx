@@ -19,9 +19,18 @@ export default function EquipmentPage({ params }: { params: Promise<{ propertyId
 
   const [equipment, setEquipment] = useState<EquipmentDraft[]>(draft?.equipment || []);
 
+  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || !draft) return;
+    synced.current = true;
+    setEquipment(draft.equipment);
+  }, [draft]);
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!auditId) return;
+    // Guard: never write an empty array — that would DELETE all equipment rows in the DB.
+    if (!auditId || !equipment.length) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => updateEquipment(auditId, equipment), 400);
     return () => clearTimeout(debounceRef.current!);
