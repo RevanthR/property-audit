@@ -136,7 +136,17 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   function initKitchenChecklist(tmpls: typeof kitchenTemplates) {
     const kitchenSub = subAreas.find((s) => s.subAreaKey === "kitchen");
     if (kitchenSub && kitchenSub.checklist.length > 0) {
-      setKitchenChecklist(kitchenSub.checklist);
+      const existing = kitchenSub.checklist;
+      const byId = new Map(existing.map((c) => [c.itemId, c]));
+      const byLabel = new Map(existing.map((c) => [c.itemLabel.toLowerCase().trim(), c]));
+      const customItems = existing.filter((c) => c.itemId.startsWith("custom_"));
+      const templateItems = tmpls.flatMap((t) =>
+        t.items.map((item) => {
+          const found = byId.get(item.id) ?? byLabel.get(item.itemLabel.toLowerCase().trim());
+          return { itemId: item.id, itemLabel: item.itemLabel, condition: found?.condition ?? null, remarks: found?.remarks ?? "" };
+        })
+      );
+      setKitchenChecklist([...templateItems, ...customItems]);
     } else {
       setKitchenChecklist(
         tmpls.flatMap((t) =>
@@ -146,13 +156,12 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
     }
   }
 
-  // Sync kitchen checklist back to Zustand (debounced via checklist-item-row already)
-  const kitchenChecklistRef = useRef(kitchenChecklist);
-  kitchenChecklistRef.current = kitchenChecklist;
-
+  // Sync kitchen checklist back to Zustand. Always reads fresh sub-areas from the store
+  // so a rapid sequence of kitchen + other-area edits can't clobber each other.
   useEffect(() => {
     if (!kitchenChecklist.length) return;
-    const updated = subAreas.map((s) =>
+    const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS;
+    const updated = currentSubs.map((s) =>
       s.subAreaKey === "kitchen" ? { ...s, checklist: kitchenChecklist } : s
     );
     updateHotelSection(auditId, sectionKey, updated);
@@ -160,38 +169,41 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   }, [kitchenChecklist]);
 
   const updateRemarks = useCallback((subAreaKey: string, remarks: string) => {
-    const updated = subAreas.map((s) => (s.subAreaKey === subAreaKey ? { ...s, remarks } : s));
+    const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS;
+    const updated = currentSubs.map((s) => (s.subAreaKey === subAreaKey ? { ...s, remarks } : s));
     updateHotelSection(auditId, sectionKey, updated);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subAreas, auditId, sectionKey]);
+  }, [auditId, sectionKey, updateHotelSection]);
 
   const updateKitchenItem = useCallback((idx: number, updated: ChecklistEntry) => {
     setKitchenChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
   }, []);
 
+  // Read fresh sub-areas from the store on every call so rapid clicks don't overwrite
+  // each other via a stale closure. Without this, two quick taps use the same pre-render
+  // subAreas snapshot and the second write silently discards the first selection.
   const updateChecklistItem = useCallback((subAreaKey: string, idx: number, updated: ChecklistEntry) => {
-    const updatedSubs = subAreas.map((s) =>
+    const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS;
+    const updatedSubs = currentSubs.map((s) =>
       s.subAreaKey === subAreaKey
         ? { ...s, checklist: s.checklist.map((c, i) => (i === idx ? updated : c)) }
         : s
     );
     updateHotelSection(auditId, sectionKey, updatedSubs);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subAreas, auditId, sectionKey]);
+  }, [auditId, sectionKey, updateHotelSection]);
 
   const addChecklistItem = useCallback((subAreaKey: string, label: string) => {
+    const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS;
     const newItem: ChecklistEntry = {
       itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       itemLabel: label,
       condition: null,
       remarks: "",
     };
-    const updatedSubs = subAreas.map((s) =>
+    const updatedSubs = currentSubs.map((s) =>
       s.subAreaKey === subAreaKey ? { ...s, checklist: [...s.checklist, newItem] } : s
     );
     updateHotelSection(auditId, sectionKey, updatedSubs);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subAreas, auditId, sectionKey]);
+  }, [auditId, sectionKey, updateHotelSection]);
 
   const addKitchenItem = useCallback((label: string) => {
     const newItem: ChecklistEntry = {
@@ -244,7 +256,7 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
                             <ChecklistItemRow
                               key={item.itemId}
                               item={item}
-                              onChange={(updated) => updateKitchenItem(globalIdx >= 0 ? globalIdx : 0, updated)}
+                              onChange={(updated) => { if (globalIdx >= 0) updateKitchenItem(globalIdx, updated); }}
                               showError={showErrors}
                             />
                           );

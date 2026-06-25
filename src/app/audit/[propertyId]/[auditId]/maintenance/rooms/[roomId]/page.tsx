@@ -54,7 +54,17 @@ export default function RoomChecklistPage({
 
   function initChecklist(tmpls: typeof templates) {
     if (room && room.checklist.length > 0) {
-      setChecklist(room.checklist);
+      const existing = room.checklist;
+      const byId = new Map(existing.map((c) => [c.itemId, c]));
+      const byLabel = new Map(existing.map((c) => [c.itemLabel.toLowerCase().trim(), c]));
+      const customItems = existing.filter((c) => c.itemId.startsWith("custom_"));
+      const templateItems = tmpls.flatMap((t) =>
+        t.items.map((item) => {
+          const found = byId.get(item.id) ?? byLabel.get(item.itemLabel.toLowerCase().trim());
+          return { itemId: item.id, itemLabel: item.itemLabel, condition: found?.condition ?? null, remarks: found?.remarks ?? "" };
+        })
+      );
+      setChecklist([...templateItems, ...customItems]);
     } else {
       setChecklist(
         tmpls.flatMap((t) =>
@@ -167,7 +177,7 @@ export default function RoomChecklistPage({
                   {tmplItems.map((item) => {
                     const globalIdx = checklist.findIndex((c) => c.itemId === item.itemId);
                     return (
-                      <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => updateItem(globalIdx >= 0 ? globalIdx : 0, u)} showError={showErrors} />
+                      <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => { if (globalIdx >= 0) updateItem(globalIdx, u); }} showError={showErrors} />
                     );
                   })}
                   {/* Custom items added by auditor for this template group */}

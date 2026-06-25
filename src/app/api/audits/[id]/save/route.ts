@@ -62,7 +62,7 @@ async function saveRooms(auditId: string, draft: AuditDraft) {
     if (room.checklist.length) {
       await db.insert(schema.roomChecklistItems).values(
         room.checklist.map((item) => ({
-          roomId: room.id, templateItemId: null,
+          roomId: room.id, templateItemId: item.itemId || null,
           itemLabel: item.itemLabel, condition: item.condition ?? null, remarks: item.remarks,
         }))
       );
@@ -160,7 +160,7 @@ async function saveHotelSections(auditId: string, draft: AuditDraft) {
       if (sub.checklist.length) {
         await db.insert(schema.hotelSectionChecklistItems).values(
           sub.checklist.map((item) => ({
-            sectionId, itemLabel: item.itemLabel,
+            sectionId, templateItemId: item.itemId || null, itemLabel: item.itemLabel,
             condition: item.condition ?? null, remarks: item.remarks,
           }))
         );
