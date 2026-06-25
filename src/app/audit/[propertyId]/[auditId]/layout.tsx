@@ -89,9 +89,13 @@ export default function AuditLayout({
   // local has unsaved changes (debounce is pending but hasn't fired yet).
   const lastEditTimeRef = useRef<number>(0);
 
-  const syncToDb = useCallback(async (keepalive = false) => {
+  // force=true: always push (exit syncs, manual Save button).
+  // force=false (default): only push if this device has unsaved local changes — prevents
+  // a device with a stale draft from overwriting newer data pushed by another device.
+  const syncToDb = useCallback(async (keepalive = false, force = false) => {
     const d = draftRef.current;
     if (!d) return;
+    if (!force && lastEditTimeRef.current <= lastSyncCompletedRef.current) return;
     setIsSaving(true);
     try {
       const body = JSON.stringify(d);
@@ -99,17 +103,14 @@ export default function AuditLayout({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
-        // keepalive lets the request survive page unload (pagehide / visibilitychange).
-        // The Fetch spec limits keepalive body to 64 KB; fall back silently if exceeded.
         ...(keepalive && body.length < 65536 ? { keepalive: true } : {}),
       });
       if (res.ok) {
         const json = await res.json();
-        // Set BEFORE markSynced so the draft update it triggers is within the guard window.
         lastSyncCompletedRef.current = Date.now();
         markSynced(auditId, json.version);
       }
-    } catch { /* silent — data safe in localStorage */ } finally {
+    } catch { /* silent — data safe in IndexedDB */ } finally {
       setIsSaving(false);
     }
   }, [auditId, markSynced]);
@@ -124,35 +125,21 @@ export default function AuditLayout({
     if (now - lastRefreshRef.current < 10000) return;
     lastRefreshRef.current = now;
     try {
-      // Push local state first so its version is current in DB before we compare.
-      const d = draftRef.current;
-      let localVersionAfterSync = d?.version ?? -1;
-      if (d) {
-        const body = JSON.stringify(d);
-        const saveRes = await fetch(`/api/audits/${auditId}/save`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        if (!saveRes.ok) return; // abort — don't pull if push failed
-        const saved = await saveRes.json();
-        lastSyncCompletedRef.current = Date.now();
-        markSynced(auditId, saved.version);
-        localVersionAfterSync = saved.version;
-      }
-
-      // Now fetch — only replace local if server is still ahead (another device added data).
+      // Flush unsaved local changes before comparing versions.
+      // syncToDb skips automatically if no local changes exist (won't overwrite server data).
+      await syncToDb();
+      // Pull only if server is still ahead after our push (or if we had nothing to push).
       const res = await fetch(`/api/audits/${auditId}`);
       if (!res.ok) return;
       const data = await res.json();
       if (!data?.audit) return;
       const serverVersion: number = data.audit.version ?? 0;
-      if (serverVersion > localVersionAfterSync) {
-        lastSyncCompletedRef.current = Date.now(); // prevent initDraft from triggering debounce
+      if (serverVersion > (draftRef.current?.version ?? -1)) {
+        lastSyncCompletedRef.current = Date.now();
         initDraft(transformServerAuditToLocalDraft(data));
       }
     } catch { /* silent */ }
-  }, [auditId, initDraft, markSynced]);
+  }, [auditId, initDraft, syncToDb]);
 
   // Debounced sync on every real user edit.
   // Guards against two false triggers:
@@ -204,12 +191,11 @@ export default function AuditLayout({
     return () => clearInterval(interval);
   }, [auditId, initDraft]);
   useEffect(() => {
-    const onHide = () => syncToDb(true);
+    const onHide = () => syncToDb(true, true);  // keepalive + force — safety net on exit
     const onVis = () => {
-      if (document.visibilityState === "hidden") syncToDb(true);
+      if (document.visibilityState === "hidden") syncToDb(true, true);
       else if (document.visibilityState === "visible") refreshFromDb();
     };
-    // pageshow fires when iOS restores a page from bfcache (visibilitychange may not fire)
     const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) refreshFromDb(); };
     window.addEventListener("pagehide", onHide);
     window.addEventListener("pageshow", onPageShow);
@@ -337,7 +323,7 @@ export default function AuditLayout({
                 <span className="text-xs text-gray-500">{overallPct}%</span>
               </div>
               <AutoSaveIndicator lastSyncedAt={draft.lastSyncedAt} isSaving={isSaving} />
-              <Button size="sm" variant="outline" onClick={() => syncToDb()} disabled={isSaving}>
+              <Button size="sm" variant="outline" onClick={() => syncToDb(false, true)} disabled={isSaving}>
                 <Save className="h-3.5 w-3.5" /> Save
               </Button>
             </div>
