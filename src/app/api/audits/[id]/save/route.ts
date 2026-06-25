@@ -93,8 +93,11 @@ async function saveCommonAreas(auditId: string, draft: AuditDraft) {
     if (area.checklist.length) {
       await db.insert(schema.commonAreaChecklistItems).values(
         area.checklist.map((item) => ({
-          commonAreaId: areaId, itemLabel: item.itemLabel,
-          condition: item.condition ?? null, remarks: item.remarks,
+          commonAreaId: areaId,
+          templateItemId: item.itemId || null,
+          itemLabel: item.itemLabel,
+          condition: item.condition ?? null,
+          remarks: item.remarks,
         }))
       );
     }

@@ -53,8 +53,27 @@ export default function PropertyManagementPage({
   }, []);
 
   function initChecklist(tmpls: KitchenTemplate[]) {
-    if (kitchenArea && kitchenArea.checklist.length > 0) {
-      setKitchenChecklist(kitchenArea.checklist);
+    const existing = kitchenArea?.checklist ?? [];
+
+    if (existing.length > 0) {
+      // Items saved to DB before templateItemId was stored come back with DB row UUIDs.
+      // Match by itemId first, then fall back to label so condition/remarks are preserved.
+      const byId = new Map(existing.map((c) => [c.itemId, c]));
+      const byLabel = new Map(existing.map((c) => [c.itemLabel.toLowerCase().trim(), c]));
+      const customItems = existing.filter((c) => c.itemId.startsWith("custom_"));
+
+      const templateItems = tmpls.flatMap((t) =>
+        t.items.map((item) => {
+          const found = byId.get(item.id) ?? byLabel.get(item.itemLabel.toLowerCase().trim());
+          return {
+            itemId: item.id, // always normalise to template ID
+            itemLabel: item.itemLabel,
+            condition: found?.condition ?? null,
+            remarks: found?.remarks ?? "",
+          };
+        })
+      );
+      setKitchenChecklist([...templateItems, ...customItems]);
     } else {
       setKitchenChecklist(
         tmpls.flatMap((t) =>
@@ -145,7 +164,10 @@ export default function PropertyManagementPage({
                           <ChecklistItemRow
                             key={item.itemId}
                             item={item}
-                            onChange={(u) => setKitchenChecklist((prev) => prev.map((c, i) => (i === (globalIdx >= 0 ? globalIdx : 0) ? u : c)))}
+                            onChange={(u) => {
+                              if (globalIdx < 0) return;
+                              setKitchenChecklist((prev) => prev.map((c, i) => (i === globalIdx ? u : c)));
+                            }}
                             showError={showErrors}
                           />
                         );
