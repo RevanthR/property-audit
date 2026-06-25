@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 
 export default function ProcessPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
@@ -73,11 +74,11 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
+      <StepFooter className="justify-end">
         <Button onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
           Next: Rooms <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

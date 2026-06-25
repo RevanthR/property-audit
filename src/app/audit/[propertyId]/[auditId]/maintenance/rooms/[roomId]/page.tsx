@@ -8,6 +8,7 @@ import { AddChecklistItemInline } from "@/components/audit/add-checklist-item-in
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 
 // Module-level template cache — fetched once per session per context
 const tmplCache = new Map<string, { id: string; name: string; items: { id: string; itemLabel: string }[] }[]>();
@@ -188,14 +189,14 @@ export default function RoomChecklistPage({
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
           ← Rooms List
         </Button>
         <Button onClick={handleSave}>
           Save Room <CheckCircle className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

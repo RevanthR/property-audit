@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Plus, ArrowRight, Trash2, CheckCircle, Clock, ChevronRight, AlertTriangle } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 import { cn } from "@/lib/utils";
 
 function generateId() {
@@ -167,7 +168,7 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
         </DialogContent>
       </Dialog>
 
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => {
           const prev = isHostel
             ? `/audit/${propertyId}/${auditId}/process`
@@ -180,7 +181,7 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
           Next: {isHostel ? "Common Areas" : "Housekeeping"}
           <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

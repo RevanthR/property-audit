@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ArrowRight, Wrench } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 import type { Condition } from "@/lib/store/audit";
 
 export default function EquipmentPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
@@ -94,7 +95,7 @@ export default function EquipmentPage({ params }: { params: Promise<{ propertyId
         </Card>
       ))}
 
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => router.push(`/audit/${propertyId}/${auditId}/manpower`)}>
           ← Back
         </Button>
@@ -102,7 +103,7 @@ export default function EquipmentPage({ params }: { params: Promise<{ propertyId
           Next: Review
           <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

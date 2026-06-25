@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { HotelSectionForm } from "@/components/audit/hotel-section-form";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 
 export default function Page({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
@@ -15,12 +16,12 @@ export default function Page({ params }: { params: Promise<{ propertyId: string;
         <p className="text-sm text-gray-500 mt-1">Section 10 of 10</p>
       </div>
       <HotelSectionForm auditId={auditId} sectionKey="guestExperience" />
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => router.back()}>← Back</Button>
         <Button onClick={() => router.push(`/audit/${propertyId}/${auditId}/review`)}>
           Next: Review <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddChecklistItemInline } from "@/components/audit/add-checklist-item-inline";
 import { ArrowRight, Package, CheckCircle2, AlertCircle, Minus } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 import { cn } from "@/lib/utils";
 
 interface TemplateItem {
@@ -200,7 +201,7 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => router.push(prevStep)}>
           ← Back
         </Button>
@@ -208,7 +209,7 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
           Next: Review
           <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

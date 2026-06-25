@@ -10,6 +10,7 @@ import { CheckCircle, AlertCircle, Download, Send } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { isReadyToSubmit } from "@/lib/completion";
+import { StepFooter } from "@/components/audit/step-footer";
 
 export default function ReviewPage({ params }: { params: Promise<{ propertyId: string; auditId: string }> }) {
   const { propertyId, auditId } = use(params);
@@ -155,7 +156,7 @@ export default function ReviewPage({ params }: { params: Promise<{ propertyId: s
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+      <StepFooter>
         <Button variant="outline" className="flex-1" onClick={handleSync}>
           <Download className="h-4 w-4" />
           Save Draft
@@ -164,7 +165,7 @@ export default function ReviewPage({ params }: { params: Promise<{ propertyId: s
           <Send className="h-4 w-4" />
           {submitting ? "Submitting..." : "Submit Audit"}
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

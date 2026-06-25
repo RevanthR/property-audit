@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
+import { StepFooter } from "@/components/audit/step-footer";
 
 // Module-level cache — kitchen templates fetched once per session
 type KitchenTemplate = { id: string; name: string; items: { id: string; itemLabel: string }[] };
@@ -192,14 +193,14 @@ export default function PropertyManagementPage({
         <RemarksCard key={area.areaKey} area={area} onChange={(v) => handleRemarksChange(area.areaKey, v)} />
       ))}
 
-      <div className="flex items-center justify-between pt-2">
+      <StepFooter>
         <Button variant="outline" onClick={() => router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms`)}>
           ← Back
         </Button>
         <Button onClick={handleNext}>
           Next: Manpower <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }
