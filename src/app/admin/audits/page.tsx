@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronRight, Search, Trash2, Download } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface AuditRow {
@@ -31,6 +31,23 @@ function AllAudits() {
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/admin/export");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/audits")
@@ -67,14 +84,20 @@ function AllAudits() {
             <h1 className="text-2xl font-bold text-gray-900">All Audits</h1>
             <p className="text-sm text-gray-500 mt-1">{rows.length} total audits</p>
           </div>
-          <div className="w-64 relative">
-            <Input
-              placeholder="Search property or auditor..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+          <div className="flex items-center gap-2">
+            <div className="w-64 relative">
+              <Input
+                placeholder="Search property or auditor..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+            </div>
+            <Button variant="outline" onClick={handleExport} disabled={exporting}>
+              <Download className="h-4 w-4" />
+              {exporting ? "Exporting…" : "Export Excel"}
+            </Button>
           </div>
         </div>
 
