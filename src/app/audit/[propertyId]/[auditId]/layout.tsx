@@ -106,24 +106,43 @@ export default function AuditLayout({
   }, [auditId, markSynced]);
 
   // Re-fetch from DB when the page becomes visible again (tab focus, app foreground,
-  // returning from another device). Throttled to at most once per 10s to avoid hammering
-  // the DB on rapid tab switches. Updates the local draft only if the server has a newer version.
+  // returning from another device). Throttled to at most once per 10s.
+  //
+  // Pushes local state to DB first so we never overwrite unsaved local changes —
+  // "server version ahead" only means another device added data, not that local is stale.
   const refreshFromDb = useCallback(async () => {
     const now = Date.now();
     if (now - lastRefreshRef.current < 10000) return;
     lastRefreshRef.current = now;
     try {
+      // Push local state first so its version is current in DB before we compare.
+      const d = draftRef.current;
+      let localVersionAfterSync = d?.version ?? -1;
+      if (d) {
+        const body = JSON.stringify(d);
+        const saveRes = await fetch(`/api/audits/${auditId}/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        if (saveRes.ok) {
+          const saved = await saveRes.json();
+          markSynced(auditId, saved.version);
+          localVersionAfterSync = saved.version;
+        }
+      }
+
+      // Now fetch — only replace local if server is still ahead (another device added data).
       const res = await fetch(`/api/audits/${auditId}`);
       if (!res.ok) return;
       const data = await res.json();
       if (!data?.audit) return;
       const serverVersion: number = data.audit.version ?? 0;
-      const localVersion: number = draftRef.current?.version ?? -1;
-      if (serverVersion > localVersion) {
+      if (serverVersion > localVersionAfterSync) {
         initDraft(transformServerAuditToLocalDraft(data));
       }
     } catch { /* silent */ }
-  }, [auditId, initDraft]);
+  }, [auditId, initDraft, markSynced]);
 
   // Auto-sync: once after 5s (catches quick edits before the 30s interval fires),
   // then every 30s while the page is open.
