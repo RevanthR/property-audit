@@ -33,12 +33,12 @@ export default function PropertyManagementPage({
   const [loading, setLoading] = useState(kitchenTmplCacheData === null);
   const initialised = useRef(false);
 
+  // Fetch templates once — initChecklist is called by the version-bump effect below.
   useEffect(() => {
     if (initialised.current) return;
     initialised.current = true;
     if (kitchenTmplCacheData) {
       setKitchenTemplates(kitchenTmplCacheData);
-      initChecklist(kitchenTmplCacheData);
       setLoading(false);
       return;
     }
@@ -47,11 +47,24 @@ export default function PropertyManagementPage({
       .then((tmpls) => {
         kitchenTmplCacheData = tmpls;
         setKitchenTemplates(tmpls);
-        initChecklist(tmpls);
         setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-init checklist whenever draft.version increases (IDB hydration, server pull, post-save).
+  const lastSyncedVersion = useRef(-1);
+  const pendingKitchenEdit = useRef(false);
+
+  useEffect(() => {
+    if (!draft || !kitchenTemplates.length) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    pendingKitchenEdit.current = false;
+    initChecklist(kitchenTemplates);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, kitchenTemplates]);
 
   function initChecklist(tmpls: KitchenTemplate[]) {
     const existing = kitchenArea?.checklist ?? [];
@@ -85,6 +98,7 @@ export default function PropertyManagementPage({
   }
 
   function addKitchenItem(label: string) {
+    pendingKitchenEdit.current = true;
     const newItem = {
       itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       itemLabel: label,
@@ -102,7 +116,7 @@ export default function PropertyManagementPage({
   kitchenAreaRef.current = kitchenArea;
   const kitchenDebounce = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!kitchenChecklist.length) return;
+    if (!kitchenChecklist.length || !pendingKitchenEdit.current) return;
     clearTimeout(kitchenDebounce.current!);
     kitchenDebounce.current = setTimeout(() => {
       const base = kitchenAreaRef.current ?? {
@@ -175,6 +189,7 @@ export default function PropertyManagementPage({
                             item={item}
                             onChange={(u) => {
                               if (globalIdx < 0) return;
+                              pendingKitchenEdit.current = true;
                               setKitchenChecklist((prev) => prev.map((c, i) => (i === globalIdx ? u : c)));
                             }}
                             showError={showErrors}
@@ -184,7 +199,7 @@ export default function PropertyManagementPage({
                       {kitchenChecklist.filter((c) => c.itemId.startsWith("custom_")).map((item) => {
                         const globalIdx = kitchenChecklist.findIndex((c) => c.itemId === item.itemId);
                         return (
-                          <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => setKitchenChecklist((prev) => prev.map((c, i) => (i === globalIdx ? u : c)))} showError={showErrors} />
+                          <ChecklistItemRow key={item.itemId} item={item} onChange={(u) => { pendingKitchenEdit.current = true; setKitchenChecklist((prev) => prev.map((c, i) => (i === globalIdx ? u : c))); }} showError={showErrors} />
                         );
                       })}
                     </div>

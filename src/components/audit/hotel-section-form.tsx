@@ -50,14 +50,17 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   const subAreas = useAuditStore(
     useCallback((s) => (s.drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS, [auditId, sectionKey])
   );
+  const draftVersion = useAuditStore(useCallback((s) => s.drafts[auditId]?.version ?? 0, [auditId]));
   const updateHotelSection = useAuditStore((s) => s.updateHotelSection);
 
   const [kitchenChecklist, setKitchenChecklist] = useState<ChecklistEntry[]>([]);
   const [kitchenTemplates, setKitchenTemplates] = useState(templateCache.get("kitchen") ?? []);
   const kitchenInitialised = useRef(false);
+  const lastSyncedVersion = useRef(-1);
+  const pendingKitchenEdit = useRef(false);
   const hasKitchen = subAreas.some((s) => s.subAreaKey === "kitchen");
 
-  // Load kitchen templates once (use cache if available)
+  // Load kitchen templates once (initKitchenChecklist is called by the version-bump effect).
   useEffect(() => {
     if (!hasKitchen || kitchenInitialised.current) return;
     kitchenInitialised.current = true;
@@ -65,7 +68,6 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
     const cached = templateCache.get("kitchen");
     if (cached) {
       setKitchenTemplates(cached);
-      initKitchenChecklist(cached);
       return;
     }
 
@@ -74,10 +76,19 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
       .then((tmpls) => {
         templateCache.set("kitchen", tmpls);
         setKitchenTemplates(tmpls);
-        initKitchenChecklist(tmpls);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKitchen]);
+
+  // Re-init kitchen checklist whenever draftVersion increases (IDB hydration, server pull, post-save).
+  useEffect(() => {
+    if (!hasKitchen || !kitchenTemplates.length) return;
+    if (draftVersion <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = draftVersion;
+    pendingKitchenEdit.current = false;
+    initKitchenChecklist(kitchenTemplates);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftVersion, kitchenTemplates, hasKitchen]);
 
   // Sync section templates on every mount — no cache guard so moduleType changes take effect immediately.
   // Handles two cases:
@@ -156,10 +167,10 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
     }
   }
 
-  // Sync kitchen checklist back to Zustand. Always reads fresh sub-areas from the store
-  // so a rapid sequence of kitchen + other-area edits can't clobber each other.
+  // Sync kitchen checklist back to Zustand. Guard on pendingKitchenEdit so a server-pull
+  // re-sync doesn't immediately push the server's own data back to the DB.
   useEffect(() => {
-    if (!kitchenChecklist.length) return;
+    if (!kitchenChecklist.length || !pendingKitchenEdit.current) return;
     const currentSubs = (useAuditStore.getState().drafts[auditId]?.[sectionKey] as HotelSubAreaDraft[] | undefined) ?? EMPTY_SUBAREAS;
     const updated = currentSubs.map((s) =>
       s.subAreaKey === "kitchen" ? { ...s, checklist: kitchenChecklist } : s
@@ -175,6 +186,7 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   }, [auditId, sectionKey, updateHotelSection]);
 
   const updateKitchenItem = useCallback((idx: number, updated: ChecklistEntry) => {
+    pendingKitchenEdit.current = true;
     setKitchenChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
   }, []);
 
@@ -206,6 +218,7 @@ export function HotelSectionForm({ auditId, sectionKey, showErrors }: HotelSecti
   }, [auditId, sectionKey, updateHotelSection]);
 
   const addKitchenItem = useCallback((label: string) => {
+    pendingKitchenEdit.current = true;
     const newItem: ChecklistEntry = {
       itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       itemLabel: label,

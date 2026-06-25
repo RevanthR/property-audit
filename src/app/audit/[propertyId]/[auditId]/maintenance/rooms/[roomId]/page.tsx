@@ -31,13 +31,13 @@ export default function RoomChecklistPage({
   const [showErrors, setShowErrors] = useState(false);
   const [loading, setLoading] = useState(templates.length === 0);
 
+  // Fetch templates once — initChecklist is called by the version-bump effect below.
   useEffect(() => {
     if (!draft) return;
     const context = draft.propertyType === "hostel" ? "room_hostel" : "room_hotel";
     const cached = tmplCache.get(context);
     if (cached) {
       setTemplates(cached);
-      initChecklist(cached);
       setLoading(false);
       return;
     }
@@ -46,11 +46,25 @@ export default function RoomChecklistPage({
       .then((tmpls) => {
         tmplCache.set(context, tmpls);
         setTemplates(tmpls);
-        initChecklist(tmpls);
         setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-init checklist whenever draft.version increases (IDB hydration, server pull, post-save).
+  // Runs once templates are available; also re-runs when templates first load.
+  const lastSyncedVersion = useRef(-1);
+  const pendingEdit = useRef(false);
+
+  useEffect(() => {
+    if (!draft || !templates.length) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    pendingEdit.current = false;
+    initChecklist(templates);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, templates]);
 
   function initChecklist(tmpls: typeof templates) {
     if (room && room.checklist.length > 0) {
@@ -74,10 +88,11 @@ export default function RoomChecklistPage({
     }
   }
 
-  // Debounce store writes — don't write Zustand on every single condition click
+  // Debounce store writes. Guard on pendingEdit so a server-pull re-sync doesn't
+  // immediately push the server's own data back to the DB.
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!room || !checklist.length) return;
+    if (!room || !checklist.length || !pendingEdit.current) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => {
       upsertRoom(auditId, { ...room, checklist });
@@ -87,10 +102,12 @@ export default function RoomChecklistPage({
   }, [checklist]);
 
   function updateItem(idx: number, updated: ChecklistEntry) {
+    pendingEdit.current = true;
     setChecklist((prev) => prev.map((item, i) => (i === idx ? updated : item)));
   }
 
   function addCustomItem(label: string) {
+    pendingEdit.current = true;
     const newItem: ChecklistEntry = {
       itemId: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       itemLabel: label,

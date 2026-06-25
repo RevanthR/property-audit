@@ -18,23 +18,30 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
   const [admissions, setAdmissions] = useState(draft?.process.admissionsRemarks || "");
   const [payments, setPayments] = useState(draft?.process.paymentsRemarks || "");
 
-  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
-  // Without this, useState initialises to "" before IDB resolves and the debounce below
-  // fires 600ms later with empty strings, overwriting saved data in Zustand and then in DB.
-  const synced = useRef(false);
+  // Re-sync local state whenever draft.version increases.
+  // Covers three cases:
+  //   1. IDB hydration on first mount — version goes from -1 → N
+  //   2. Server pull (poll / refreshFromDb on tab focus) — version jumps ahead
+  //   3. Post-save markSynced — version bumps but draft.process already matches local state,
+  //      so setAdmissions/setPayments are effectively no-ops.
+  const lastSyncedVersion = useRef(-1);
+  const pendingEdit = useRef(false); // true only while the user has unsaved local edits
+
   useEffect(() => {
-    if (synced.current || !draft) return;
-    synced.current = true;
+    if (!draft) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    pendingEdit.current = false; // clear edit flag — server data wins for this version
     setAdmissions(draft.process.admissionsRemarks || "");
     setPayments(draft.process.paymentsRemarks || "");
   }, [draft]);
 
-  // Debounce store writes — only after 600ms of no typing.
-  // Guard !synced.current: prevents empty-string overwrite while draft is still loading
-  // (IDB async hydration or in-flight DB fetch can take >600ms on slow networks).
+  // Debounce store writes. Guard on pendingEdit so a server-pull re-sync that calls
+  // setAdmissions/setPayments doesn't immediately push the server's own data back.
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!auditId || !synced.current) return;
+    if (!auditId || !pendingEdit.current) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => {
       updateProcess(auditId, { admissionsRemarks: admissions, paymentsRemarks: payments });
@@ -57,7 +64,7 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
           <Textarea
             placeholder="Enter remarks about the admissions process..."
             value={admissions}
-            onChange={(e) => setAdmissions(e.target.value)}
+            onChange={(e) => { pendingEdit.current = true; setAdmissions(e.target.value); }}
             rows={4}
           />
         </CardContent>
@@ -69,7 +76,7 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
           <Textarea
             placeholder="Enter remarks about the payments process..."
             value={payments}
-            onChange={(e) => setPayments(e.target.value)}
+            onChange={(e) => { pendingEdit.current = true; setPayments(e.target.value); }}
             rows={4}
           />
         </CardContent>
