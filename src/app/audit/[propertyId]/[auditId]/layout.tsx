@@ -81,6 +81,13 @@ export default function AuditLayout({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const lastRefreshRef = useRef<number>(0);
+  // Timestamp of the last completed sync or remote pull (initDraft from poll/refresh).
+  // Guards the change-debounce so that markSynced / initDraft state updates don't
+  // re-trigger a sync — only genuine user edits should start the debounce.
+  const lastSyncCompletedRef = useRef<number>(0);
+  // Timestamp of the last user-initiated edit. Used by the poll to skip pulling when
+  // local has unsaved changes (debounce is pending but hasn't fired yet).
+  const lastEditTimeRef = useRef<number>(0);
 
   const syncToDb = useCallback(async (keepalive = false) => {
     const d = draftRef.current;
@@ -98,6 +105,8 @@ export default function AuditLayout({
       });
       if (res.ok) {
         const json = await res.json();
+        // Set BEFORE markSynced so the draft update it triggers is within the guard window.
+        lastSyncCompletedRef.current = Date.now();
         markSynced(auditId, json.version);
       }
     } catch { /* silent — data safe in localStorage */ } finally {
@@ -125,11 +134,11 @@ export default function AuditLayout({
           headers: { "Content-Type": "application/json" },
           body,
         });
-        if (saveRes.ok) {
-          const saved = await saveRes.json();
-          markSynced(auditId, saved.version);
-          localVersionAfterSync = saved.version;
-        }
+        if (!saveRes.ok) return; // abort — don't pull if push failed
+        const saved = await saveRes.json();
+        lastSyncCompletedRef.current = Date.now();
+        markSynced(auditId, saved.version);
+        localVersionAfterSync = saved.version;
       }
 
       // Now fetch — only replace local if server is still ahead (another device added data).
@@ -139,21 +148,26 @@ export default function AuditLayout({
       if (!data?.audit) return;
       const serverVersion: number = data.audit.version ?? 0;
       if (serverVersion > localVersionAfterSync) {
+        lastSyncCompletedRef.current = Date.now(); // prevent initDraft from triggering debounce
         initDraft(transformServerAuditToLocalDraft(data));
       }
     } catch { /* silent */ }
   }, [auditId, initDraft, markSynced]);
 
-  // Debounced sync on every draft change — fires 1.5s after the last edit so data
-  // reaches the DB within seconds of any change, not on a 30s clock.
-  // Skip the very first render so loading a draft from DB/localStorage doesn't trigger a write.
+  // Debounced sync on every real user edit.
+  // Guards against two false triggers:
+  //   • markSynced updates draft.lastSyncedAt after every sync → would cause infinite loop
+  //   • initDraft from poll/refreshFromDb updates draft → would ping-pong between devices
+  // Both are suppressed by the 500ms window after lastSyncCompletedRef is set.
   const hasHydrated = useRef(false);
   const changeDebounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!hasHydrated.current) { hasHydrated.current = true; return; }
     if (!draft) return;
+    if (Date.now() - lastSyncCompletedRef.current < 500) return; // sync/pull just happened — not a user edit
+    lastEditTimeRef.current = Date.now();
     clearTimeout(changeDebounceRef.current!);
-    changeDebounceRef.current = setTimeout(syncToDb, 1500);
+    changeDebounceRef.current = setTimeout(syncToDb, 2000);
     return () => clearTimeout(changeDebounceRef.current!);
   }, [draft, syncToDb]);
 
@@ -164,10 +178,13 @@ export default function AuditLayout({
   }, [syncToDb]);
 
   // Poll for version changes every 5s while the tab is visible.
-  // Only fetches full data when another device has actually pushed something newer.
+  // Skips if local has unsaved edits (debounce pending) to avoid overwriting them.
+  // Sets lastSyncCompletedRef before initDraft so the change-debounce ignores the update.
   useEffect(() => {
     const poll = async () => {
       if (document.visibilityState !== "visible") return;
+      // Local has unsaved changes — wait for the debounce to push them first.
+      if (lastEditTimeRef.current > lastSyncCompletedRef.current) return;
       try {
         const res = await fetch(`/api/audits/${auditId}/version`);
         if (!res.ok) return;
@@ -176,7 +193,10 @@ export default function AuditLayout({
           const full = await fetch(`/api/audits/${auditId}`);
           if (!full.ok) return;
           const data = await full.json();
-          if (data?.audit) initDraft(transformServerAuditToLocalDraft(data));
+          if (data?.audit) {
+            lastSyncCompletedRef.current = Date.now();
+            initDraft(transformServerAuditToLocalDraft(data));
+          }
         }
       } catch { /* silent */ }
     };
