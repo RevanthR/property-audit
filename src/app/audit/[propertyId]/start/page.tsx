@@ -266,6 +266,7 @@ function buildDraft(auditId: string, property: Property, auditorName: string, au
     finance: HOTEL_SECTIONS.finance.map((s) => ({ ...s, remarks: "", checklist: [] })),
     humanResources: HOTEL_SECTIONS.humanResources.map((s) => ({ ...s, remarks: "", checklist: [] })),
     guestExperience: HOTEL_SECTIONS.guestExperience.map((s) => ({ ...s, remarks: "", checklist: [] })),
+    version: 0,
     lastSyncedAt: null,
   };
 }

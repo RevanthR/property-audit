@@ -77,38 +77,78 @@ export default function AuditLayout({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditId]);
 
-  // Stable ref to draft so syncToDb doesn't re-create on every draft change
+  // Stable ref to draft so syncToDb/refreshFromDb don't re-create on every draft change
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const lastRefreshRef = useRef<number>(0);
 
-  const syncToDb = useCallback(async () => {
+  const syncToDb = useCallback(async (keepalive = false) => {
     const d = draftRef.current;
     if (!d) return;
     setIsSaving(true);
     try {
+      const body = JSON.stringify(d);
       const res = await fetch(`/api/audits/${auditId}/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(d),
+        body,
+        // keepalive lets the request survive page unload (pagehide / visibilitychange).
+        // The Fetch spec limits keepalive body to 64 KB; fall back silently if exceeded.
+        ...(keepalive && body.length < 65536 ? { keepalive: true } : {}),
       });
-      if (res.ok) markSynced(auditId);
+      if (res.ok) {
+        const json = await res.json();
+        markSynced(auditId, json.version);
+      }
     } catch { /* silent — data safe in localStorage */ } finally {
       setIsSaving(false);
     }
   }, [auditId, markSynced]);
 
-  // Auto-sync every 30s and on page hide
+  // Re-fetch from DB when the page becomes visible again (tab focus, app foreground,
+  // returning from another device). Throttled to at most once per 10s to avoid hammering
+  // the DB on rapid tab switches. Updates the local draft only if the server has a newer version.
+  const refreshFromDb = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastRefreshRef.current < 10000) return;
+    lastRefreshRef.current = now;
+    try {
+      const res = await fetch(`/api/audits/${auditId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data?.audit) return;
+      const serverVersion: number = data.audit.version ?? 0;
+      const localVersion: number = draftRef.current?.version ?? -1;
+      if (serverVersion > localVersion) {
+        initDraft(transformServerAuditToLocalDraft(data));
+      }
+    } catch { /* silent */ }
+  }, [auditId, initDraft]);
+
+  // Auto-sync: once after 5s (catches quick edits before the 30s interval fires),
+  // then every 30s while the page is open.
   useEffect(() => {
-    const timer = setInterval(syncToDb, 30000);
-    return () => clearInterval(timer);
+    const initial = setTimeout(syncToDb, 5000);
+    const recurring = setInterval(syncToDb, 30000);
+    return () => { clearTimeout(initial); clearInterval(recurring); };
   }, [syncToDb]);
   useEffect(() => {
-    const onHide = () => syncToDb();
-    const onVis = () => { if (document.visibilityState === "hidden") syncToDb(); };
+    const onHide = () => syncToDb(true);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") syncToDb(true);
+      else if (document.visibilityState === "visible") refreshFromDb();
+    };
+    // pageshow fires when iOS restores a page from bfcache (visibilitychange may not fire)
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) refreshFromDb(); };
     window.addEventListener("pagehide", onHide);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVis);
-    return () => { window.removeEventListener("pagehide", onHide); document.removeEventListener("visibilitychange", onVis); };
-  }, [syncToDb]);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [syncToDb, refreshFromDb]);
 
   // ── Section lock management ──────────────────────────────────────────────────
   const currentStepKey = draft ? getCurrentStepKey(pathname, draft.propertyType) : "";
@@ -226,7 +266,7 @@ export default function AuditLayout({
                 <span className="text-xs text-gray-500">{overallPct}%</span>
               </div>
               <AutoSaveIndicator lastSyncedAt={draft.lastSyncedAt} isSaving={isSaving} />
-              <Button size="sm" variant="outline" onClick={syncToDb} disabled={isSaving}>
+              <Button size="sm" variant="outline" onClick={() => syncToDb()} disabled={isSaving}>
                 <Save className="h-3.5 w-3.5" /> Save
               </Button>
             </div>

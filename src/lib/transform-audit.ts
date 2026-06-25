@@ -151,6 +151,7 @@ export function transformServerAuditToLocalDraft(data: any): AuditDraft {
     finance: buildHotelSection("finance", "finance"),
     humanResources: buildHotelSection("hr", "humanResources"),
     guestExperience: buildHotelSection("guest_experience", "guestExperience"),
+    version: audit.version ?? 0,
     lastSyncedAt: audit.updatedAt ? new Date(audit.updatedAt).toISOString() : null,
   };
 }

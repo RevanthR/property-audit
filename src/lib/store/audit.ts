@@ -93,6 +93,7 @@ export interface AuditDraft {
   humanResources: HotelSubAreaDraft[];
   guestExperience: HotelSubAreaDraft[];
 
+  version: number; // DB version — used to detect when another device has newer data
   lastSyncedAt: string | null;
 }
 
@@ -128,7 +129,7 @@ interface AuditStore {
     >,
     subAreas: HotelSubAreaDraft[]
   ) => void;
-  markSynced: (auditId: string) => void;
+  markSynced: (auditId: string, version?: number) => void;
   clearDraft: (auditId: string) => void;
 }
 
@@ -241,13 +242,14 @@ export const useAuditStore = create<AuditStore>()(
           },
         })),
 
-      markSynced: (auditId) =>
+      markSynced: (auditId, version) =>
         set((state) => ({
           drafts: {
             ...state.drafts,
             [auditId]: {
               ...state.drafts[auditId],
               lastSyncedAt: new Date().toISOString(),
+              ...(version !== undefined ? { version } : {}),
             },
           },
         })),
