@@ -203,7 +203,7 @@ export default function AuditLayout({
         }
       } catch { /* silent */ }
     };
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
   }, [auditId, initDraft]);
   useEffect(() => {

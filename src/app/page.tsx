@@ -271,6 +271,9 @@ function PropertyCard({
   const router = useRouter();
   const lastAudit = recentAudits.find((r) => r.property.id === property.id);
   const hasDraft = !!localDraft;
+  // A draft exists in the DB but not locally (different device, or local storage cleared)
+  const hasDbDraft = !hasDraft && lastAudit?.audit.status === "draft";
+  const isOngoing = hasDraft || hasDbDraft;
 
   const handleStart = useCallback(
     () => {
@@ -278,6 +281,8 @@ function PropertyCard({
         const firstStep = localDraft!.propertyType === "hostel" ? "process" : "hotel/front-office";
         router.push(`/audit/${property.id}/${localDraft!.auditId}/${firstStep}`);
       } else {
+        // Both "Start Audit" and "Join Audit" go through the start page,
+        // which detects the existing draft and navigates to the correct step.
         router.push(`/audit/${property.id}/start`);
       }
     },
@@ -300,7 +305,7 @@ function PropertyCard({
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {hasDraft ? (
+        {isOngoing ? (
           <div className="flex items-center gap-2 text-xs text-amber-600 mb-3">
             <Clock className="h-3.5 w-3.5" />
             <span className="font-medium">Audit in progress</span>
@@ -309,18 +314,16 @@ function PropertyCard({
           <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
             <Calendar className="h-3.5 w-3.5" />
             <span>Last: {formatDate(lastAudit.audit.auditDate)}</span>
-            <Badge variant={lastAudit.audit.status === "submitted" ? "success" : "warning"} className="ml-auto">
-              {lastAudit.audit.status === "submitted" ? "Done" : "Draft"}
-            </Badge>
+            <Badge variant="success" className="ml-auto">Done</Badge>
           </div>
         ) : (
           <p className="text-xs text-gray-400 mb-3">No audits yet</p>
         )}
         <div className="flex gap-2">
-          <Button size="sm" className={`flex-1 ${hasDraft ? "bg-amber-500 hover:bg-amber-600" : ""}`} onClick={handleStart}>
-            {hasDraft ? "Resume Audit" : "Start Audit"}
+          <Button size="sm" className={`flex-1 ${isOngoing ? "bg-amber-500 hover:bg-amber-600" : ""}`} onClick={handleStart}>
+            {hasDraft ? "Resume Audit" : hasDbDraft ? "Join Audit" : "Start Audit"}
           </Button>
-          {lastAudit && !hasDraft && (
+          {lastAudit?.audit.status === "submitted" && !hasDraft && (
             <Button size="sm" variant="outline" onClick={() => router.push(`/reports/${lastAudit.audit.id}`)}>
               Report
             </Button>
