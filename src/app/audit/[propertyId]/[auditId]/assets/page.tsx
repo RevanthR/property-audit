@@ -33,15 +33,17 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
   const [items, setItems] = useState<AssetInventoryItemDraft[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSyncedVersion = useRef(-1);
 
   // Determine context based on property type
   const context = draft?.propertyType === "hostel" ? "asset_inventory_hostel" : "asset_inventory_hotel";
 
-  // On mount: if draft already has items use those, otherwise load from template
+  // On mount: if draft already has items use those, otherwise load from template.
   useEffect(() => {
     if (!draft) return;
     if (draft.assetInventory && draft.assetInventory.length > 0) {
       setItems(draft.assetInventory);
+      lastSyncedVersion.current = draft.version ?? 0;
       return;
     }
     // Load template items
@@ -61,6 +63,16 @@ export default function AssetsPage({ params }: { params: Promise<{ propertyId: s
       .finally(() => setLoadingTemplates(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditId, context]);
+
+  // Re-sync when draft.version increases (server pull, post-save) — only if items are
+  // already populated so we don't interfere with the template-loading flow.
+  useEffect(() => {
+    if (!draft || !draft.assetInventory?.length) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    setItems(draft.assetInventory);
+  }, [draft]);
 
   function handleCondition(idx: number, condition: Condition) {
     setItems((prev) => {

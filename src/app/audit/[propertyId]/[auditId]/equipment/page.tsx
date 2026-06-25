@@ -20,18 +20,23 @@ export default function EquipmentPage({ params }: { params: Promise<{ propertyId
 
   const [equipment, setEquipment] = useState<EquipmentDraft[]>(draft?.equipment || []);
 
-  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
-  const synced = useRef(false);
+  // Re-sync whenever draft.version increases (IDB hydration, server pull, post-save).
+  const lastSyncedVersion = useRef(-1);
+  const pendingEdit = useRef(false);
+
   useEffect(() => {
-    if (synced.current || !draft) return;
-    synced.current = true;
+    if (!draft) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    pendingEdit.current = false;
     setEquipment(draft.equipment);
   }, [draft]);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    // Guard: never write an empty array — that would DELETE all equipment rows in the DB.
-    if (!auditId || !equipment.length) return;
+    // Guard: never write an empty array, and skip if no user edit has happened.
+    if (!auditId || !equipment.length || !pendingEdit.current) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => updateEquipment(auditId, equipment), 400);
     return () => clearTimeout(debounceRef.current!);
@@ -40,6 +45,7 @@ export default function EquipmentPage({ params }: { params: Promise<{ propertyId
   if (!draft) return null;
 
   function updateItem(item: string, updates: Partial<EquipmentDraft>) {
+    pendingEdit.current = true;
     setEquipment((prev) =>
       prev.map((e) => (e.item === item ? { ...e, ...updates } : e))
     );

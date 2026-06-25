@@ -18,18 +18,23 @@ export default function ManpowerPage({ params }: { params: Promise<{ propertyId:
 
   const [manpower, setManpower] = useState<ManpowerDraft[]>(draft?.manpower || []);
 
-  // Sync local state when draft first becomes available (IDB hydration, DB fetch, or join-audit).
-  const synced = useRef(false);
+  // Re-sync whenever draft.version increases (IDB hydration, server pull, post-save).
+  const lastSyncedVersion = useRef(-1);
+  const pendingEdit = useRef(false);
+
   useEffect(() => {
-    if (synced.current || !draft) return;
-    synced.current = true;
+    if (!draft) return;
+    const v = draft.version ?? 0;
+    if (v <= lastSyncedVersion.current) return;
+    lastSyncedVersion.current = v;
+    pendingEdit.current = false;
     setManpower(draft.manpower);
   }, [draft]);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    // Guard: never write an empty array — that would DELETE all manpower rows in the DB.
-    if (!auditId || !manpower.length) return;
+    // Guard: never write an empty array, and skip if no user edit has happened.
+    if (!auditId || !manpower.length || !pendingEdit.current) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => updateManpower(auditId, manpower), 600);
     return () => clearTimeout(debounceRef.current!);
@@ -38,6 +43,7 @@ export default function ManpowerPage({ params }: { params: Promise<{ propertyId:
   if (!draft) return null;
 
   function updateItem(section: string, field: "count" | "remarks", value: string | number | null) {
+    pendingEdit.current = true;
     setManpower((prev) =>
       prev.map((m) => (m.section === section ? { ...m, [field]: value } : m))
     );
