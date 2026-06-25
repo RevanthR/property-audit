@@ -180,19 +180,25 @@ export default function AuditLayout({
     return () => clearInterval(recurring);
   }, [syncToDb]);
 
-  // Poll for version changes every 5s while the tab is visible.
-  // Skips if local has unsaved edits (debounce pending) to avoid overwriting them.
-  // Sets lastSyncCompletedRef before initDraft so the change-debounce ignores the update.
+  // Poll for version changes every 15s while the tab is visible.
+  // Adaptive backoff: after 4 consecutive no-change polls (~60s of quiet), skips 3 of
+  // every 4 ticks, effectively polling every 60s. Resets to fast mode on any change.
+  const pollTickRef = useRef(0);
+  const noChangeStreakRef = useRef(0);
   useEffect(() => {
     const poll = async () => {
+      pollTickRef.current++;
       if (document.visibilityState !== "visible") return;
       // Local has unsaved changes — wait for the debounce to push them first.
       if (lastEditTimeRef.current > lastSyncCompletedRef.current) return;
+      // Backoff: once quiet for 4+ polls, only poll every 4th tick (~60s).
+      if (noChangeStreakRef.current >= 4 && pollTickRef.current % 4 !== 0) return;
       try {
         const res = await fetch(`/api/audits/${auditId}/version`);
         if (!res.ok) return;
         const { version: serverVersion } = await res.json();
         if (serverVersion > (draftRef.current?.version ?? -1)) {
+          noChangeStreakRef.current = 0; // change detected — resume fast polling
           const full = await fetch(`/api/audits/${auditId}`);
           if (!full.ok) return;
           const data = await full.json();
@@ -200,6 +206,8 @@ export default function AuditLayout({
             lastSyncCompletedRef.current = Date.now();
             initDraft(transformServerAuditToLocalDraft(data));
           }
+        } else {
+          noChangeStreakRef.current = Math.min(noChangeStreakRef.current + 1, 8);
         }
       } catch { /* silent */ }
     };
@@ -273,9 +281,11 @@ export default function AuditLayout({
     if (prev && prev !== currentStepKey) releaseLock(prev);
     acquireLock(currentStepKey);
 
-    // Heartbeat every 25s to keep lock alive
+    // Heartbeat every 60s to keep lock alive; skip when tab is hidden.
     clearInterval(lockHeartbeatRef.current!);
-    lockHeartbeatRef.current = setInterval(() => acquireLock(currentStepKey), 25000);
+    lockHeartbeatRef.current = setInterval(() => {
+      if (document.visibilityState === "visible") acquireLock(currentStepKey);
+    }, 60000);
 
     return () => {
       clearInterval(lockHeartbeatRef.current!);
