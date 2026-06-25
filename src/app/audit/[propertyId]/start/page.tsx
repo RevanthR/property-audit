@@ -25,7 +25,29 @@ interface ExistingAudit {
   auditorName: string;
   auditDate: string;
   completionPct: number;
+  currentStep: string;
 }
+
+// Maps the DB currentStep key to its URL path segment
+const STEP_TO_URL: Record<string, string> = {
+  process: "process",
+  rooms: "maintenance/rooms",
+  guest_rooms: "maintenance/rooms",
+  property: "maintenance/property",
+  manpower: "manpower",
+  equipment: "equipment",
+  assets: "assets",
+  review: "review",
+  front_office: "hotel/front-office",
+  housekeeping: "hotel/housekeeping",
+  engineering: "hotel/engineering",
+  food_beverage: "hotel/food-beverage",
+  property_mgmt: "hotel/property-management",
+  security: "hotel/security",
+  finance: "hotel/finance",
+  hr: "hotel/hr",
+  guest_exp: "hotel/guest-experience",
+};
 
 export default function AuditStartPage({ params }: { params: Promise<{ propertyId: string }> }) {
   return (
@@ -60,9 +82,10 @@ function AuditStart({ params }: { params: Promise<{ propertyId: string }> }) {
 
   async function handleJoin() {
     if (!existingAudit || !property) return;
-    // Navigate — the layout will load audit data from DB into local draft
-    const firstStep = property.type === "hostel" ? "process" : "hotel/front-office";
-    router.push(`/audit/${propertyId}/${existingAudit.id}/${firstStep}`);
+    // Navigate to the step the auditor was last on; fall back to the first step if unknown
+    const defaultStep = property.type === "hostel" ? "process" : "hotel/front-office";
+    const stepPath = STEP_TO_URL[existingAudit.currentStep] ?? defaultStep;
+    router.push(`/audit/${propertyId}/${existingAudit.id}/${stepPath}`);
   }
 
   async function handleStart() {
@@ -82,11 +105,15 @@ function AuditStart({ params }: { params: Promise<{ propertyId: string }> }) {
       });
       const audit = await res.json();
 
-      // Initialize local draft
-      initDraft(buildDraft(audit.id, property, user?.name ?? "Unknown", auditDate));
+      if (res.status === 201) {
+        // New audit — initialize a fresh local draft
+        initDraft(buildDraft(audit.id, property, user?.name ?? "Unknown", auditDate));
+      }
+      // If an existing draft was returned (200), don't overwrite it with an empty buildDraft.
+      // The layout will fetch the real data from DB and populate the local draft.
 
-      const firstStep = property.type === "hostel" ? "process" : "hotel/front-office";
-      router.push(`/audit/${propertyId}/${audit.id}/${firstStep}`);
+      const stepPath = STEP_TO_URL[audit.currentStep] ?? (property.type === "hostel" ? "process" : "hotel/front-office");
+      router.push(`/audit/${propertyId}/${audit.id}/${stepPath}`);
     } catch {
       setError("Failed to start audit. Please try again.");
     } finally {

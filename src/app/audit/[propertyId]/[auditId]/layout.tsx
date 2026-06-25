@@ -49,6 +49,7 @@ export default function AuditLayout({
   const draft = useAuditStore(useCallback((s) => s.drafts[auditId], [auditId]));
   const markSynced = useAuditStore((s) => s.markSynced);
   const initDraft = useAuditStore((s) => s.initDraft);
+  const updateDraft = useAuditStore((s) => s.updateDraft);
 
   const [isSaving, setIsSaving] = useState(false);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
@@ -66,7 +67,12 @@ export default function AuditLayout({
       .then((r) => r.json())
       .then((data) => {
         if (data?.audit) {
-          initDraft(transformServerAuditToLocalDraft(data));
+          const serverVersion: number = data.audit.version ?? 0;
+          // Only overwrite local draft if server is strictly newer — prevents a race
+          // where IDB hydrates with local unsaved changes after the fetch starts.
+          if (serverVersion > (draftRef.current?.version ?? -1)) {
+            initDraft(transformServerAuditToLocalDraft(data));
+          }
         } else {
           // Audit not found — redirect home
           router.replace("/");
@@ -141,6 +147,16 @@ export default function AuditLayout({
     } catch { /* silent */ }
   }, [auditId, initDraft, syncToDb]);
 
+  // On initial mount (draft already in IDB from a previous session on THIS device), check
+  // if the server has newer data — e.g. another device made edits since the last close.
+  const didInitialRefresh = useRef(false);
+  useEffect(() => {
+    if (!draft || didInitialRefresh.current) return;
+    didInitialRefresh.current = true;
+    refreshFromDb();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
   // Debounced sync on every real user edit.
   // Guards against two false triggers:
   //   • markSynced updates draft.lastSyncedAt after every sync → would cause infinite loop
@@ -209,6 +225,18 @@ export default function AuditLayout({
 
   // ── Section lock management ──────────────────────────────────────────────────
   const currentStepKey = draft ? getCurrentStepKey(pathname, draft.propertyType) : "";
+
+  // Keep draft.currentStep in sync with actual navigation so "Resume Audit" lands on
+  // the last step the auditor was working on.
+  const prevStepRef = useRef("");
+  useEffect(() => {
+    if (!currentStepKey || currentStepKey === prevStepRef.current) return;
+    prevStepRef.current = currentStepKey;
+    if (draftRef.current && draftRef.current.currentStep !== currentStepKey) {
+      updateDraft(auditId, { currentStep: currentStepKey });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStepKey]);
 
   const acquireLock = useCallback(async (sectionKey: string, force = false) => {
     if (!user || !sectionKey || sectionKey === "review") return;

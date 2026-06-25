@@ -208,9 +208,10 @@ export default function PropertyManagementPage({
 // Isolated component with local state so area remarks don't cause page re-renders
 function RemarksCard({ area, onChange }: { area: { areaKey: string; areaLabel: string; remarks: string }; onChange: (v: string) => void }) {
   const [value, setValue] = useState(area.remarks || "");
-  // Sync local state if the area is restored from a saved draft (e.g. navigation back)
+  // Sync local state when area key changes (navigation) OR when remarks are pulled from
+  // another device via the version-poll — keeps cross-device sync visible immediately.
   const areaKey = area.areaKey;
-  useEffect(() => { setValue(area.remarks || ""); }, [areaKey]);
+  useEffect(() => { setValue(area.remarks || ""); }, [areaKey, area.remarks]);
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">{area.areaLabel}</CardTitle></CardHeader>

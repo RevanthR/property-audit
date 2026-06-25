@@ -30,10 +30,11 @@ export default function ProcessPage({ params }: { params: Promise<{ propertyId: 
   }, [draft]);
 
   // Debounce store writes — only after 600ms of no typing.
-  // The sync effect above corrects the initial empty values before this debounce fires.
+  // Guard !synced.current: prevents empty-string overwrite while draft is still loading
+  // (IDB async hydration or in-flight DB fetch can take >600ms on slow networks).
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!auditId) return;
+    if (!auditId || !synced.current) return;
     clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => {
       updateProcess(auditId, { admissionsRemarks: admissions, paymentsRemarks: payments });

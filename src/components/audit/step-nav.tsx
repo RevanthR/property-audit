@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,15 +20,24 @@ interface StepNavProps {
 }
 
 export function StepNav({ steps, currentKey, stepStatuses }: StepNavProps) {
+  const navRef = useRef<HTMLElement>(null);
+
+  // Scroll the active step into view on mobile when the step changes
+  useEffect(() => {
+    if (!navRef.current) return;
+    const active = navRef.current.querySelector<HTMLElement>("[data-current]");
+    active?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [currentKey]);
+
   return (
-    <nav className="overflow-x-auto py-1">
+    <nav ref={navRef} className="overflow-x-auto py-1">
       <ol className="flex items-center gap-0 min-w-max">
         {steps.map((step, i) => {
           const status = stepStatuses[step.key] ?? "untouched";
           const isCurrent = step.key === currentKey;
 
           return (
-            <li key={step.key} className="flex items-center">
+            <li key={step.key} className="flex items-center" {...(isCurrent ? { "data-current": "" } : {})}>
               <Link href={step.href} className="flex flex-col items-center group">
                 <div
                   className={cn(
