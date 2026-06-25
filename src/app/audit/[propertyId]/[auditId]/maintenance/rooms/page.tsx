@@ -48,8 +48,11 @@ export default function RoomsPage({ params }: { params: Promise<{ propertyId: st
     router.push(`/audit/${propertyId}/${auditId}/maintenance/rooms/${roomId}`);
   }
 
-  const completedRooms = draft.rooms.filter((r) => r.checklist.some((c) => c.condition !== null));
-  const pendingRooms = draft.rooms.filter((r) => !r.checklist.some((c) => c.condition !== null));
+  const sortedRooms = [...draft.rooms].sort((a, b) =>
+    a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: "base" })
+  );
+  const completedRooms = sortedRooms.filter((r) => r.checklist.some((c) => c.condition !== null));
+  const pendingRooms = sortedRooms.filter((r) => !r.checklist.some((c) => c.condition !== null));
 
   return (
     <div className="space-y-6">

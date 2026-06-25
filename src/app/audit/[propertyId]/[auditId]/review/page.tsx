@@ -93,7 +93,7 @@ export default function ReviewPage({ params }: { params: Promise<{ propertyId: s
               <span className="text-red-600 flex items-center gap-1"><AlertCircle className="h-4 w-4" /> {roomNotOk} Not Ok</span>
             </div>
             <div className="space-y-1 max-h-48 overflow-y-auto">
-              {draft.rooms.map((r) => {
+              {[...draft.rooms].sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: "base" })).map((r) => {
                 const issues = r.checklist.filter((c) => c.condition === "not_ok").length;
                 const done = r.checklist.filter((c) => c.condition !== null).length;
                 return (

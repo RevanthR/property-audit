@@ -14,12 +14,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ audi
   const manpower = await db.select().from(auditManpower).where(eq(auditManpower.auditId, auditId));
   const equipment = await db.select().from(auditEquipment).where(eq(auditEquipment.auditId, auditId));
   const rooms = await db.select().from(auditRooms).where(eq(auditRooms.auditId, auditId));
-  const roomsWithItems = await Promise.all(
+  const roomsWithItems = (await Promise.all(
     rooms.map(async (room) => {
       const items = await db.select().from(roomChecklistItems).where(eq(roomChecklistItems.roomId, room.id));
       return { ...room, checklist: items };
     })
-  );
+  )).sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true, sensitivity: "base" }));
   const commonAreas = await db.select().from(auditCommonAreas).where(eq(auditCommonAreas.auditId, auditId));
   const commonAreasWithItems = await Promise.all(
     commonAreas.map(async (area) => {
